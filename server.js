@@ -16,11 +16,14 @@ const reviewRoutes = require('./routes/reviews.routes');
 const app = express();
 connectDB();
 
-app.use(cors({
-  origin: 'https://husseinstorefullstack-git-master-husseins-projects-8485646e.vercel.app',
-  credentials: true
-}));
+// app.use(cors({
+//   origin: 'https://husseinstorefullstack-git-master-husseins-projects-8485646e.vercel.app',
+//   credentials: true
+// }));
 
+app.use(cors({
+  origin: '*'
+}));
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
