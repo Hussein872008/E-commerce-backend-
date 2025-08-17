@@ -16,26 +16,24 @@ const reviewRoutes = require('./routes/reviews.routes');
 const app = express();
 connectDB();
 
-// app.use(cors({
-//   origin: 'https://husseinstorefullstack-git-master-husseins-projects-8485646e.vercel.app',
-//   credentials: true
-// }));
-
+// CORS: السماح للفرونت
 app.use(cors({
-  origin: '*'
+  origin: 'https://husseinstorefullstack.vercel.app',
+  credentials: true
 }));
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-app.use((req, res, next) => {
-  res.setHeader('Content-Security-Policy', "default-src 'self'");
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'DENY');
-  res.setHeader('X-XSS-Protection', '1; mode=block');
-  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-  next();
-});
+// ==================== إزالة هيدرز الأمان ====================
+// app.use((req, res, next) => {
+//   res.setHeader('Content-Security-Policy', "default-src 'self'");
+//   res.setHeader('X-Content-Type-Options', 'nosniff');
+//   res.setHeader('X-Frame-Options', 'DENY');
+//   res.setHeader('X-XSS-Protection', '1; mode=block');
+//   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+//   next();
+// });
 
 app.use('/api/auth', authRoutes);
 app.use('/api/products', productRoutes);
