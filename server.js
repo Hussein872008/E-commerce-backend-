@@ -17,7 +17,7 @@ const app = express();
 connectDB();
 
 app.use(cors({
-  origin: process.env.FRONTEND_URL,
+  origin:https://ecommerce-backend-oks5857m7-husseins-projects-8485646e.vercel.app,
   credentials: true
 }));
 
