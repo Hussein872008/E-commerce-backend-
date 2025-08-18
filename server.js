@@ -38,6 +38,9 @@ app.use(cors({
   credentials: true
 }));
 
+// Middleware لفك JSON والـ form data
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // ==================== إزالة هيدرز الأمان ====================
 // app.use((req, res, next) => {
