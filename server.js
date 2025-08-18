@@ -22,7 +22,7 @@ const allowedOrigins = [
   "https://husseinstorefullstack.vercel.app",
   "https://e-commerce-frontend-git-master-husseins-projects-2008.vercel.app", // الفرونت الجديد
   "https://e-commerce-backend-production-7ac6.up.railway.app",
-  "https://e-commerce-frontend-git-master-husseins-projects-2008.vercel.app"
+  "https://e-commerce-frontend-mu-woad.vercel.app"
 ];
 
 app.use(cors({
