@@ -17,13 +17,27 @@ const app = express();
 connectDB();
 
 // CORS: السماح للفرونت
+// CORS: السماح للفرونت
+const allowedOrigins = [
+  "https://husseinstorefullstack.vercel.app",
+  "https://e-commerce-frontend-git-master-husseins-projects-2008.vercel.app", // الفرونت الجديد
+  "https://e-commerce-backend-production-7ac6.up.railway.app",
+  "https://e-commerce-frontend-git-master-husseins-projects-2008.vercel.app"
+];
+
 app.use(cors({
-  origin: 'https://husseinstorefullstack.vercel.app',
+  origin: function (origin, callback) {
+    // السماح للطلبات اللي جايه من Postman أو بدون Origin
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    } else {
+      return callback(new Error("Not allowed by CORS"));
+    }
+  },
   credentials: true
 }));
 
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // ==================== إزالة هيدرز الأمان ====================
 // app.use((req, res, next) => {
