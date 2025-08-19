@@ -16,22 +16,41 @@ const reviewRoutes = require('./routes/reviews.routes');
 const app = express();
 connectDB();
 
+// CORS: السماح للفرونت
+// CORS: السماح للفرونت
+const allowedOrigins = [
+  "https://husseinstorefullstack.vercel.app",
+  "https://e-commerce-frontend-git-master-husseins-projects-2008.vercel.app", // الفرونت الجديد
+  "https://e-commerce-backend-production-7ac6.up.railway.app",
+  "https://e-commerce-frontend-mu-woad.vercel.app"
+];
+
 app.use(cors({
-  origin: process.env.FRONTEND_URL,
+  origin: function (origin, callback) {
+    // السماح للطلبات اللي جايه من Postman أو بدون Origin
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    } else {
+      return callback(new Error("Not allowed by CORS"));
+    }
+  },
   credentials: true
 }));
 
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+// Middleware لفك JSON والـ form data
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-app.use((req, res, next) => {
-  res.setHeader('Content-Security-Policy', "default-src 'self'");
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'DENY');
-  res.setHeader('X-XSS-Protection', '1; mode=block');
-  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-  next();
-});
+// ==================== إزالة هيدرز الأمان ====================
+// app.use((req, res, next) => {
+//   res.setHeader('Content-Security-Policy', "default-src 'self'");
+//   res.setHeader('X-Content-Type-Options', 'nosniff');
+//   res.setHeader('X-Frame-Options', 'DENY');
+//   res.setHeader('X-XSS-Protection', '1; mode=block');
+//   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+//   next();
+// });
 
 app.use('/api/auth', authRoutes);
 app.use('/api/products', productRoutes);
