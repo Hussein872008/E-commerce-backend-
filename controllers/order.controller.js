@@ -5,12 +5,13 @@ const Cart = require("../models/cart.model");
 
 
 const getFullImageUrl = (image) => {
+  const backendUrl = process.env.BACKEND_URL || process.env.FRONTEND_URL;
   if (!image || image === "undefined") {
-    return `${process.env.BASE_URL}/placeholder-product.png`;
+    return `${backendUrl}/placeholder-product.png`;
   }
   if (image.startsWith("http")) return image;
   const cleanImage = image.replace(/^\/+/, "").replace(/^uploads\//, "");
-  return `${process.env.FRONTEND_URL}/uploads/${cleanImage}`;
+  return `${backendUrl}/uploads/${cleanImage}`;
 };
 
 
@@ -149,7 +150,7 @@ exports.getMyOrders = async (req, res) => {
       const fixedItems = order.items.map((item) => {
         let imageUrl = item.product
           ? getFullImageUrl(item.product.image)
-          : `${process.env.BASE_URL}/placeholder-product.png`;
+          : `${(process.env.BACKEND_URL || process.env.FRONTEND_URL)}/placeholder-product.png`;
 
         return {
           ...item.toObject(),
@@ -485,11 +486,12 @@ exports.getOrderDetails = async (req, res) => {
         select: "title price image",
         transform: doc => {
           if (!doc) return null;
+          const backendUrl = process.env.BACKEND_URL || process.env.FRONTEND_URL;
           return {
             _id: doc._id,
             title: doc.title,
             price: doc.price,
-            image: doc.image?.startsWith('http') ? doc.image : `${process.env.FRONTEND_URL}${doc.image.startsWith('/') ? '' : '/'}${doc.image}`
+            image: doc.image?.startsWith('http') ? doc.image : `${backendUrl}${doc.image.startsWith('/') ? '' : '/'}${doc.image}`
           };
         }
       });
@@ -589,14 +591,14 @@ exports.getSellerOrders = async (req, res) => {
             title: "Deleted Product",
             price: 0,
             seller: null,
-            image: `${process.env.FRONTEND_URL}/placeholder-product.png`
+            image: `${(process.env.BACKEND_URL || process.env.FRONTEND_URL)}/placeholder-product.png`
           };
           return {
             _id: doc._id,
             title: doc.title,
             price: doc.price,
             seller: doc.seller,
-            image: doc.image?.startsWith('http') ? doc.image : `${process.env.FRONTEND_URL}${doc.image.startsWith('/') ? '' : '/'}${doc.image}`
+            image: doc.image?.startsWith('http') ? doc.image : `${(process.env.BACKEND_URL || process.env.FRONTEND_URL)}${doc.image.startsWith('/') ? '' : '/'}${doc.image}`
           };
         }
       })
@@ -619,7 +621,7 @@ exports.getSellerOrders = async (req, res) => {
             title: "Deleted Product",
             price: 0,
             seller: null,
-            image: `${process.env.FRONTEND_URL}/placeholder-product.png`
+            image: `${(process.env.BACKEND_URL || process.env.FRONTEND_URL)}/placeholder-product.png`
           }
         };
       });
@@ -654,7 +656,7 @@ exports.getRecentOrders = async (req, res) => {
           _id: doc._id,
           title: doc.title,
           price: doc.price,
-          image: doc.image?.startsWith('http') ? doc.image : `${process.env.FRONTEND_URL}${doc.image.startsWith('/') ? '' : '/'}${doc.image}`
+          image: doc.image?.startsWith('http') ? doc.image : `${(process.env.BACKEND_URL || process.env.FRONTEND_URL)}${doc.image.startsWith('/') ? '' : '/'}${doc.image}`
         } : null
       })
       .sort({ createdAt: -1 })

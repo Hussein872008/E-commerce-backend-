@@ -23,7 +23,7 @@ exports.getCart = async (req, res) => {
                         _id: doc._id,
                         title: doc.title,
                         price: doc.price,
-                        image: doc.image?.startsWith('http') ? doc.image : `${process.env.FRONTEND_URL}${doc.image.startsWith('/') ? '' : '/'}${doc.image}`,
+                        image: doc.image?.startsWith('http') ? doc.image : `${(process.env.BACKEND_URL || process.env.FRONTEND_URL)}${doc.image.startsWith('/') ? '' : '/'}${doc.image}`,
                         quantity: doc.quantity,
                         seller: doc.seller
                     };

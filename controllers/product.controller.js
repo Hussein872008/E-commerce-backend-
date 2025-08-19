@@ -32,8 +32,9 @@ exports.createProduct = async (req, res) => {
       });
     }
 
-    const imagePath = `${process.env.FRONTEND_URL}/uploads/${req.files.image[0].filename}`;
-    const extraImages = req.files.extraImages?.map(file => `${process.env.FRONTEND_URL}/uploads/${file.filename}`) || [];
+  const backendUrl = process.env.BACKEND_URL || process.env.FRONTEND_URL;
+  const imagePath = `${backendUrl}/uploads/${req.files.image[0].filename}`;
+  const extraImages = req.files.extraImages?.map(file => `${backendUrl}/uploads/${file.filename}`) || [];
 
     const productData = {
       title: req.body.title,
@@ -126,11 +127,13 @@ exports.updateProduct = async (req, res) => {
       } catch (imgErr) {
         console.error(`[Product] Error deleting old image for product: ${product._id}`, imgErr);
       }
-      product.image = `${process.env.FRONTEND_URL}/uploads/${req.files.image[0].filename}`;
+  const backendUrl = process.env.BACKEND_URL || process.env.FRONTEND_URL;
+  product.image = `${backendUrl}/uploads/${req.files.image[0].filename}`;
     }
 
     if (req.files?.extraImages?.length > 0) {
-      product.extraImages.push(...req.files.extraImages.map((file) => `${process.env.FRONTEND_URL}/uploads/${file.filename}`));
+      const backendUrl = process.env.BACKEND_URL || process.env.FRONTEND_URL;
+      product.extraImages.push(...req.files.extraImages.map((file) => `${backendUrl}/uploads/${file.filename}`));
     }
 
     await product.save();
