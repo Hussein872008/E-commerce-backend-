@@ -48,12 +48,14 @@ router.get(
 router.put(
   "/cancel/:id",
   verifyToken,
-  checkCancelPermission, 
+  checkCancelPermission,
+  orderController.cancelOrder
 );
 
 router.get(
   "/search",
   verifyToken,
+  orderController.searchOrders
 );
 
 router.get(

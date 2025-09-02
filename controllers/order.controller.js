@@ -7,7 +7,7 @@ const Cart = require("../models/cart.model");
 const getFullImageUrl = (image) => {
   const backendUrl = process.env.BACKEND_URL || process.env.FRONTEND_URL;
   if (!image || image === "undefined") {
-    return `${backendUrl}/placeholder-product.png`;
+    return `${backendUrl}/placeholder-image.webp`;
   }
   if (image.startsWith("http")) return image;
   const cleanImage = image.replace(/^\/+/, "").replace(/^uploads\//, "");
@@ -150,7 +150,7 @@ exports.getMyOrders = async (req, res) => {
       const fixedItems = order.items.map((item) => {
         let imageUrl = item.product
           ? getFullImageUrl(item.product.image)
-          : `${(process.env.BACKEND_URL || process.env.FRONTEND_URL)}/placeholder-product.png`;
+          : `${(process.env.BACKEND_URL || process.env.FRONTEND_URL)}/placeholder-image.webp`;
 
         return {
           ...item.toObject(),
@@ -591,7 +591,7 @@ exports.getSellerOrders = async (req, res) => {
             title: "Deleted Product",
             price: 0,
             seller: null,
-            image: `${(process.env.BACKEND_URL || process.env.FRONTEND_URL)}/placeholder-product.png`
+            image: `${(process.env.BACKEND_URL || process.env.FRONTEND_URL)}/placeholder-image.webp`
           };
           return {
             _id: doc._id,
@@ -621,7 +621,7 @@ exports.getSellerOrders = async (req, res) => {
             title: "Deleted Product",
             price: 0,
             seller: null,
-            image: `${(process.env.BACKEND_URL || process.env.FRONTEND_URL)}/placeholder-product.png`
+            image: `${(process.env.BACKEND_URL || process.env.FRONTEND_URL)}/placeholder-image.webp`
           }
         };
       });

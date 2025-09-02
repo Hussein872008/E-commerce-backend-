@@ -22,7 +22,8 @@ const allowedOrigins = [
   "https://husseinstorefullstack.vercel.app",
   "https://e-commerce-frontend-git-master-husseins-projects-2008.vercel.app", // الفرونت الجديد
   "https://e-commerce-backend-production-7ac6.up.railway.app",
-  "https://e-commerce-frontend-mu-woad.vercel.app"
+  "https://e-commerce-frontend-mu-woad.vercel.app",
+  "http://localhost:5173"
 ];
 
 app.use(cors({
@@ -42,15 +43,6 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// ==================== إزالة هيدرز الأمان ====================
-// app.use((req, res, next) => {
-//   res.setHeader('Content-Security-Policy', "default-src 'self'");
-//   res.setHeader('X-Content-Type-Options', 'nosniff');
-//   res.setHeader('X-Frame-Options', 'DENY');
-//   res.setHeader('X-XSS-Protection', '1; mode=block');
-//   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-//   next();
-// });
 
 app.use('/api/auth', authRoutes);
 app.use('/api/products', productRoutes);

@@ -251,10 +251,29 @@ exports.deleteProductImage = async (req, res) => {
 
 exports.getAllProducts = async (req, res) => {
   try {
-    const products = await Product.find()
+    let products = await Product.find()
       .populate("seller", "name email _id")
       .sort("-createdAt")
       .lean();
+
+    // جلب متوسط التقييم وعدد المراجعات لكل منتج
+    const productIds = products.map(p => p._id);
+    const ratings = await Review.aggregate([
+      { $match: { product: { $in: productIds } } },
+      { $group: { _id: "$product", averageRating: { $avg: "$rating" }, reviewsCount: { $sum: 1 } } }
+    ]);
+    const ratingsMap = {};
+    ratings.forEach(r => {
+      ratingsMap[r._id.toString()] = {
+        averageRating: r.averageRating ? parseFloat(r.averageRating.toFixed(1)) : 0,
+        reviewsCount: r.reviewsCount || 0
+      };
+    });
+    products = products.map(p => ({
+      ...p,
+      averageRating: ratingsMap[p._id.toString()]?.averageRating || 0,
+      reviewsCount: ratingsMap[p._id.toString()]?.reviewsCount || 0
+    }));
 
     res.status(200).json({
       success: true,
@@ -339,13 +358,32 @@ exports.getFilteredProducts = asyncHandler(async (req, res) => {
       Product.countDocuments(filter)
     ]);
 
+    // جلب متوسط التقييم وعدد المراجعات لكل منتج
+    const productIds = products.map(p => p._id);
+    const ratings = await Review.aggregate([
+      { $match: { product: { $in: productIds } } },
+      { $group: { _id: "$product", averageRating: { $avg: "$rating" }, reviewsCount: { $sum: 1 } } }
+    ]);
+    const ratingsMap = {};
+    ratings.forEach(r => {
+      ratingsMap[r._id.toString()] = {
+        averageRating: r.averageRating ? parseFloat(r.averageRating.toFixed(1)) : 0,
+        reviewsCount: r.reviewsCount || 0
+      };
+    });
+    const productsWithRatings = products.map(p => ({
+      ...p,
+      averageRating: ratingsMap[p._id.toString()]?.averageRating || 0,
+      reviewsCount: ratingsMap[p._id.toString()]?.reviewsCount || 0
+    }));
+
     res.status(200).json({
       success: true,
-      count: products.length,
+      count: productsWithRatings.length,
       total,
       page: parseInt(page),
       pages: Math.ceil(total / limit),
-      products 
+      products: productsWithRatings
     });
 
   } catch (err) {
