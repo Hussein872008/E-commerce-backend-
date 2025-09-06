@@ -19,6 +19,33 @@ const getAllUsers = async (req, res) => {
   }
 };
 
+const deleteSelf = async (req, res) => {
+  try {
+    const userToDelete = await User.findById(req.user._id);
+    if (!userToDelete) {
+      return res.status(404).json({
+        success: false,
+        error: "User not found.",
+        details: "User not found"
+      });
+    }
+
+    // Allow self deletion. Admins are protected from being deleted by non-admins via admin delete route.
+    await userToDelete.deleteOne();
+    console.log(`[User] Self-deleted: ${userToDelete._id}`);
+    res.status(200).json({
+      success: true,
+      message: "Your account has been deleted successfully"
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: err.message
+    });
+  }
+};
+
 const updateUserRole = async (req, res) => {
   try {
     const { role } = req.body;
@@ -192,5 +219,6 @@ module.exports = {
   updateUserRole,
   updateUserProfile,
   deleteUser,
+  deleteSelf,
   getAdminStats
 };

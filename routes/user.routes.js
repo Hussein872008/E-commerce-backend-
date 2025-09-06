@@ -5,6 +5,11 @@ const { verifyToken, restrictTo } = require("../middleware/auth.middleware");
 const { check } = require('express-validator');
 
 router.get("/", verifyToken, restrictTo('admin'), userController.getAllUsers);
+// Self delete (account owner can delete their own account) - keep this before the dynamic '/:id' route
+router.delete('/me', verifyToken, userController.deleteSelf);
+router.get("/stats", verifyToken, restrictTo('admin'), userController.getAdminStats);
+
+// Admin-only routes that operate on an arbitrary user id
 router.delete("/:id", verifyToken, restrictTo('admin'), userController.deleteUser);
 router.put("/:id/role", verifyToken, restrictTo('admin'), userController.updateUserRole);
 router.patch(
@@ -18,6 +23,5 @@ router.patch(
   ],
   userController.updateUserProfile
 );
-router.get("/stats", verifyToken, restrictTo('admin'), userController.getAdminStats);
 
 module.exports = router;
