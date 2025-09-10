@@ -5,6 +5,7 @@ const fsp = require("fs").promises;
 const path = require("path");
 const Review = require('../models/review.model');
 const asyncHandler = require("express-async-handler");
+const { deleteFromCloudinary } = require("../utils/cloudinary");
 
 function ensureUploadsDir() {
   const dir = path.join(__dirname, '../uploads');
@@ -15,98 +16,88 @@ function ensureUploadsDir() {
 
 exports.createProduct = async (req, res) => {
   try {
-    const requiredFields = ['title', 'description', 'price', 'category'];
-    const missingFields = requiredFields.filter(field => !req.body[field]);
+    const requiredFields = ["title", "description", "price", "category"];
+    const missingFields = requiredFields.filter((field) => !req.body[field]);
 
     if (missingFields.length > 0) {
       return res.status(400).json({
         success: false,
-        error: `Missing required fields: ${missingFields.join(', ')}`
+        error: `Missing required fields: ${missingFields.join(", ")}`,
       });
     }
-
 
     if (!req.files?.image?.[0]) {
       return res.status(400).json({
         success: false,
-        error: "Main product image is required"
+        error: "Main product image is required",
       });
     }
 
-  const backendUrl = process.env.BACKEND_URL || process.env.FRONTEND_URL;
-  const imagePath = `${backendUrl}/uploads/${req.files.image[0].filename}`;
-  const extraImages = req.files.extraImages?.map(file => `${backendUrl}/uploads/${file.filename}`) || [];
+    // روابط الصور من Cloudinary
+    const imageUrl = req.files.image[0].path;
+    const extraImages =
+      req.files.extraImages?.map((file) => file.path) || [];
 
     const productData = {
       title: req.body.title,
       name: req.body.title,
       description: req.body.description,
       price: parseFloat(req.body.price),
-      discountPercentage: (typeof req.body.discountPercentage !== 'undefined' && req.body.discountPercentage !== '')
-        ? parseFloat(req.body.discountPercentage)
-        : 0,
+      discountPercentage:
+        typeof req.body.discountPercentage !== "undefined" &&
+        req.body.discountPercentage !== ""
+          ? parseFloat(req.body.discountPercentage)
+          : 0,
       quantity: parseInt(req.body.quantity) || 1,
       category: req.body.category,
-      image: imagePath,
+      image: imageUrl,
       extraImages,
       seller: req.user._id,
       meta: {
         createdAt: new Date(),
-        updatedAt: new Date()
-      }
+        updatedAt: new Date(),
+      },
     };
 
-    if (typeof req.body.brand !== 'undefined' && req.body.brand !== '') productData.brand = req.body.brand;
-    if (typeof req.body.sku !== 'undefined' && req.body.sku !== '') productData.sku = req.body.sku;
-    if (typeof req.body.weight !== 'undefined' && req.body.weight !== '') productData.weight = parseFloat(req.body.weight);
-    if (typeof req.body.dimensions !== 'undefined' && req.body.dimensions !== '') {
+    if (req.body.brand) productData.brand = req.body.brand;
+    if (req.body.sku) productData.sku = req.body.sku;
+    if (req.body.weight) productData.weight = parseFloat(req.body.weight);
+    if (req.body.dimensions) {
       try {
         productData.dimensions = JSON.parse(req.body.dimensions);
-      } catch (parseErr) {
-      }
+      } catch {}
     }
-    if (typeof req.body.warrantyInformation !== 'undefined' && req.body.warrantyInformation !== '') productData.warrantyInformation = req.body.warrantyInformation;
-    if (typeof req.body.shippingInformation !== 'undefined' && req.body.shippingInformation !== '') productData.shippingInformation = req.body.shippingInformation;
-    if (typeof req.body.availabilityStatus !== 'undefined' && req.body.availabilityStatus !== '') productData.availabilityStatus = req.body.availabilityStatus;
-    if (typeof req.body.returnPolicy !== 'undefined' && req.body.returnPolicy !== '') productData.returnPolicy = req.body.returnPolicy;
-    if (typeof req.body.minimumOrderQuantity !== 'undefined' && req.body.minimumOrderQuantity !== '') productData.minimumOrderQuantity = parseInt(req.body.minimumOrderQuantity);
-    if (typeof req.body.tags !== 'undefined' && req.body.tags !== '') productData.tags = req.body.tags.split(',').map(tag => tag.trim());
-
+    if (req.body.warrantyInformation)
+      productData.warrantyInformation = req.body.warrantyInformation;
+    if (req.body.shippingInformation)
+      productData.shippingInformation = req.body.shippingInformation;
+    if (req.body.availabilityStatus)
+      productData.availabilityStatus = req.body.availabilityStatus;
+    if (req.body.returnPolicy)
+      productData.returnPolicy = req.body.returnPolicy;
+    if (req.body.minimumOrderQuantity)
+      productData.minimumOrderQuantity = parseInt(req.body.minimumOrderQuantity);
+    if (req.body.tags)
+      productData.tags = req.body.tags.split(",").map((tag) => tag.trim());
 
     const product = new Product(productData);
     await product.save();
 
-
     return res.status(201).json({
       success: true,
       message: "Product created successfully",
-      data: product
+      data: product,
     });
-
   } catch (err) {
     console.error("Create product error:", err);
-
-    try {
-      if (req.files?.image?.[0]) {
-        await fsp.unlink(path.join(__dirname, '../uploads', req.files.image[0].filename));
-      }
-      if (req.files?.extraImages) {
-        await Promise.all(req.files.extraImages.map(file =>
-          fsp.unlink(path.join(__dirname, '../uploads', file.filename))
-        ));
-      }
-    } catch (cleanupErr) {
-      console.error("Error cleaning up files:", cleanupErr);
-    }
-
     return res.status(500).json({
       success: false,
       error: "Failed to create product",
       message: err.message,
-      stack: err.stack
     });
   }
 };
+
 
 exports.updateProduct = async (req, res) => {
   try {
@@ -114,54 +105,47 @@ exports.updateProduct = async (req, res) => {
     const product = await Product.findById(id);
     if (!product) return res.status(404).json({ error: "Product not found" });
 
-    if (product.seller.toString() !== req.user._id.toString() && req.user.role !== "admin") {
+    if (
+      product.seller.toString() !== req.user._id.toString() &&
+      req.user.role !== "admin"
+    ) {
       return res.status(403).json({ error: "Not authorized" });
     }
 
     const { title, description, price, quantity, category } = req.body;
-    product.title = title;
-    product.description = description;
-    product.price = price;
-    product.quantity = quantity;
-    product.category = category;
+    if (title) product.title = title;
+    if (description) product.description = description;
+    if (price) product.price = price;
+    if (quantity) product.quantity = quantity;
+    if (category) product.category = category;
 
+    // تحديث الصور من Cloudinary
     if (req.files?.image?.[0]) {
-      try {
-        if (product.image) {
-          const oldImagePath = path.join(__dirname, '..', product.image.replace(/^\/+/, ""));
-          if (fs.existsSync(oldImagePath)) {
-            await fsp.unlink(oldImagePath);
-            console.log(`[Product] Deleted old image for product: ${product._id}`);
-          }
-        }
-      } catch (imgErr) {
-        console.error(`[Product] Error deleting old image for product: ${product._id}`, imgErr);
-      }
-  const backendUrl = process.env.BACKEND_URL || process.env.FRONTEND_URL;
-  product.image = `${backendUrl}/uploads/${req.files.image[0].filename}`;
+      product.image = req.files.image[0].path;
     }
-
     if (req.files?.extraImages?.length > 0) {
-      const backendUrl = process.env.BACKEND_URL || process.env.FRONTEND_URL;
-      product.extraImages.push(...req.files.extraImages.map((file) => `${backendUrl}/uploads/${file.filename}`));
+      product.extraImages.push(
+        ...req.files.extraImages.map((file) => file.path)
+      );
     }
 
     await product.save();
-    console.log(`[Product] Product updated: ${product._id}`);
     res.json({
       success: true,
       message: "Product updated successfully.",
-      product
+      product,
     });
   } catch (err) {
     console.error(`[Product] Error updating product: ${req.params.id}`, err);
     res.status(500).json({
       success: false,
       error: "Error updating product.",
-      details: err.message
+      details: err.message,
     });
   }
 };
+
+
 
 exports.deleteProduct = async (req, res) => {
   try {
@@ -178,35 +162,13 @@ exports.deleteProduct = async (req, res) => {
       return res.status(403).json({ error: "Not authorized" });
     }
 
+    // حذف الصور من Cloudinary
     if (product.image) {
-      try {
-        const imagePath = path.join(
-          __dirname,
-          "..",
-          product.image.replace(/^\/+/, "")
-        );
-        if (require("fs").existsSync(imagePath)) {
-          await fs.unlink(imagePath);
-        }
-      } catch (err) {
-        console.error("Error deleting main image:", err.message);
-      }
+      await deleteFromCloudinary(product.image);
     }
-
     if (product.extraImages?.length > 0) {
-      for (const imgPath of product.extraImages) {
-        try {
-          const fullPath = path.join(
-            __dirname,
-            "..",
-            imgPath.replace(/^\/+/, "")
-          );
-          if (fs.existsSync(fullPath)) {
-            await fsp.unlink(fullPath);
-          }
-        } catch (err) {
-          console.error("Error deleting extra image:", err.message);
-        }
+      for (const img of product.extraImages) {
+        await deleteFromCloudinary(img);
       }
     }
 
@@ -215,11 +177,10 @@ exports.deleteProduct = async (req, res) => {
     res.json({ success: true, message: "Product deleted successfully" });
   } catch (err) {
     console.error("Error in deleteProduct:", err.message);
-    res
-      .status(500)
-      .json({ error: "Failed to delete product", details: err.message });
+    res.status(500).json({ error: "Failed to delete product", details: err.message });
   }
 };
+
 
 
 exports.deleteProductImage = async (req, res) => {
@@ -232,31 +193,20 @@ exports.deleteProductImage = async (req, res) => {
       return res.status(404).json({ error: "Product not found" });
     }
 
-    if (product.seller.toString() !== req.user._id.toString() && req.user.role !== "admin") {
+    if (
+      product.seller.toString() !== req.user._id.toString() &&
+      req.user.role !== "admin"
+    ) {
       return res.status(403).json({ error: "Not authorized" });
     }
 
-    const filename = path.basename(imagePath || '');
-    if (!filename) {
-      return res.status(400).json({ error: 'Invalid imagePath' });
-    }
+    // احذف من Cloudinary
+    await deleteFromCloudinary(imagePath);
 
-    const fullImagePath = path.join(__dirname, '..', 'uploads', filename);
-    if (fs.existsSync(fullImagePath)) {
-      try {
-        await fsp.unlink(fullImagePath);
-      } catch (unlinkErr) {
-        console.error('Error unlinking file:', unlinkErr);
-      }
-    }
-
-    product.extraImages = (product.extraImages || []).filter((img) => {
-      try {
-        return path.basename(img) !== filename;
-      } catch (e) {
-        return img !== imagePath;
-      }
-    });
+    // امسحها من extraImages
+    product.extraImages = (product.extraImages || []).filter(
+      (img) => img !== imagePath
+    );
     await product.save();
 
     res.json({
@@ -273,6 +223,7 @@ exports.deleteProductImage = async (req, res) => {
     });
   }
 };
+
 
 exports.getAllProducts = async (req, res) => {
   try {
