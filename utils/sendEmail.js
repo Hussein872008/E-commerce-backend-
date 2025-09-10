@@ -33,12 +33,17 @@ const transporterConfig = SMTP_HOST
       socketTimeout: 30000
     };
 
+// Load Resend library safely for CommonJS
 let ResendLib = null;
 if (RESEND_API_KEY) {
   try {
     const imported = require('resend');
-    // Some versions use default export
+    // Some versions export the class in default property
     ResendLib = imported.default || imported;
+    if (typeof ResendLib !== 'function') {
+      console.warn('[sendEmail] ResendLib is not a constructor. Disabling Resend API.');
+      ResendLib = null;
+    }
   } catch (e) {
     console.warn('[sendEmail] Resend library not available:', e.message || e);
     ResendLib = null;
@@ -51,7 +56,7 @@ async function sendEmail(to, subject, text, html) {
   // Attempt sending via Resend API first if configured
   if (RESEND_API_KEY && ResendLib) {
     try {
-      const resend = new ResendLib(RESEND_API_KEY);
+      const resend = new ResendLib(RESEND_API_KEY); // now safe
       const from = EMAIL_FROM || EMAIL_USER;
       const payload = { from, to, subject };
       if (html) payload.html = html;
@@ -87,7 +92,6 @@ async function sendEmail(to, subject, text, html) {
     return info;
   } catch (err) {
     console.error('[sendEmail] Failed to send email (Nodemailer):', err);
-    // Instead of crashing, return a descriptive object
     return { error: true, message: 'Failed to send email', details: err.message || err };
   }
 }
