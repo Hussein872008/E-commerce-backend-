@@ -9,13 +9,11 @@ const { verifyToken } = require("../middleware/auth.middleware");
 const { checkRole } = require("../middleware/role.middleware");
 const productController = require("../controllers/product.controller");
 
-// إعداد حقول الصور: صورة أساسية + صور إضافية
 const productUpload = upload.fields([
   { name: "image", maxCount: 1 },
   { name: "extraImages", maxCount: 5 }
 ]);
 
-// Routes
 router.get("/", productController.getAllProducts);
 router.get("/filtered", productController.getFilteredProducts);
 router.get("/categories", productController.getCategories);

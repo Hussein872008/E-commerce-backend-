@@ -33,7 +33,6 @@ exports.createProduct = async (req, res) => {
       });
     }
 
-    // روابط الصور من Cloudinary
     const imageUrl = req.files.image[0].path;
     const extraImages =
       req.files.extraImages?.map((file) => file.path) || [];
@@ -119,7 +118,6 @@ exports.updateProduct = async (req, res) => {
     if (quantity) product.quantity = quantity;
     if (category) product.category = category;
 
-    // تحديث الصور من Cloudinary
     if (req.files?.image?.[0]) {
       product.image = req.files.image[0].path;
     }
@@ -162,7 +160,6 @@ exports.deleteProduct = async (req, res) => {
       return res.status(403).json({ error: "Not authorized" });
     }
 
-    // حذف الصور من Cloudinary
     if (product.image) {
       await deleteFromCloudinary(product.image);
     }
@@ -200,13 +197,29 @@ exports.deleteProductImage = async (req, res) => {
       return res.status(403).json({ error: "Not authorized" });
     }
 
-    // احذف من Cloudinary
-    await deleteFromCloudinary(imagePath);
+    let toDeleteUrl = null;
+    if (typeof imagePath === 'string' && imagePath.startsWith('http')) {
+      toDeleteUrl = imagePath;
+    } else if (typeof imagePath === 'string') {
+      const filename = imagePath.split('/').pop();
+      const match = (product.extraImages || []).find(img => img && img.includes(filename));
+      if (match) toDeleteUrl = match;
+    }
 
-    // امسحها من extraImages
-    product.extraImages = (product.extraImages || []).filter(
-      (img) => img !== imagePath
-    );
+    if (toDeleteUrl) {
+      await deleteFromCloudinary(toDeleteUrl);
+    } else {
+      console.warn('[Product] deleteProductImage: no matching stored image URL found for', imagePath);
+    }
+
+    const filenameToRemove = (imagePath && String(imagePath).split('/').pop()) || null;
+    product.extraImages = (product.extraImages || []).filter((img) => {
+      if (!img) return false;
+      if (img === imagePath) return false;
+      if (toDeleteUrl && img === toDeleteUrl) return false;
+      if (filenameToRemove && img.split('/').pop() === filenameToRemove) return false;
+      return true;
+    });
     await product.save();
 
     res.json({

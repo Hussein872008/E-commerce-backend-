@@ -1,14 +1,11 @@
 const cloudinary = require("../config/cloudinary");
 
-/**
- * Extract Cloudinary public_id from a URL
- */
 function getPublicIdFromUrl(url) {
   if (!url) return null;
   try {
     const parts = url.split("/");
-    const fileName = parts.pop().split(".")[0]; // abc123
-    const folder = parts.slice(parts.indexOf("upload") + 1).join("/"); // ecommerce_uploads
+    const fileName = parts.pop().split(".")[0]; 
+    const folder = parts.slice(parts.indexOf("upload") + 1).join("/"); 
     return `${folder}/${fileName}`;
   } catch {
     return null;

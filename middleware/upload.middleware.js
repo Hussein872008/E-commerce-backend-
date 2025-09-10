@@ -2,26 +2,23 @@ const multer = require("multer");
 const { CloudinaryStorage } = require("multer-storage-cloudinary");
 const cloudinary = require("../config/cloudinary");
 
-// إعداد التخزين على Cloudinary
 const storage = new CloudinaryStorage({
   cloudinary,
   params: {
-    folder: "ecommerce_uploads", // فولدر في حسابك Cloudinary
+    folder: "ecommerce_uploads", 
     allowed_formats: ["jpg", "png", "gif", "webp"],
   },
 });
 
-// إعداد multer مع Cloudinary
 const upload = multer({
   storage,
   limits: {
-    fileSize: 5 * 1024 * 1024, // 5MB
+    fileSize: 5 * 1024 * 1024, 
     files: 6,
     fields: 50,
   },
 });
 
-// فلترة الملفات (تأكد من النوع)
 const fileFilter = (req, file, cb) => {
   const allowedMimeTypes = [
     "image/jpeg",
@@ -37,7 +34,6 @@ const fileFilter = (req, file, cb) => {
   }
 };
 
-// ميدل وير للتعامل مع أخطاء الرفع
 const handleUploadErrors = (err, req, res, next) => {
   if (err instanceof multer.MulterError) {
     let message = "File upload error occurred";
@@ -64,12 +60,9 @@ const handleUploadErrors = (err, req, res, next) => {
   next();
 };
 
-// ميدل وير للتحقق من وجود ملفات مطلوبة في request.files
-// usage: validateFiles(['image', 'extraImages'])
 const validateFiles = (requiredFields = []) => {
   return (req, res, next) => {
     try {
-      // multer puts files on req.files when using .fields()
       const files = req.files || {};
 
       for (const field of requiredFields) {
