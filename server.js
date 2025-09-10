@@ -19,10 +19,7 @@ const server = require('http').createServer(app);
 const io = require('socket.io')(server, {
   cors: {
     origin: [
-      "https://husseinstorefullstack.vercel.app",
-      "https://e-commerce-frontend-git-master-husseins-projects-2008.vercel.app",
-      "https://e-commerce-backend-production-7ac6.up.railway.app",
-      "https://e-commerce-frontend-mu-woad.vercel.app",
+      "https://ecommerce-hussein.vercel.app",
       "http://localhost:5173"
     ],
     methods: ["GET", "POST"],
@@ -77,10 +74,7 @@ global.connectedUsers = connectedUsers;
 connectDB();
 
 const allowedOrigins = [
-  "https://husseinstorefullstack.vercel.app",
-  "https://e-commerce-frontend-git-master-husseins-projects-2008.vercel.app",
-  "https://e-commerce-backend-production-7ac6.up.railway.app",
-  "https://e-commerce-frontend-mu-woad.vercel.app",
+  "https://ecommerce-hussein.vercel.app",
   "http://localhost:5173"
 ];
 
