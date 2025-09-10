@@ -1,6 +1,7 @@
 const Product = require("../models/product.model");
 const Order = require("../models/order.model");
-const fs = require("fs").promises;
+const fs = require("fs");
+const fsp = require("fs").promises;
 const path = require("path");
 const Review = require('../models/review.model');
 const asyncHandler = require("express-async-handler");
@@ -38,10 +39,12 @@ exports.createProduct = async (req, res) => {
 
     const productData = {
       title: req.body.title,
-      name: req.body.title, 
+      name: req.body.title,
       description: req.body.description,
       price: parseFloat(req.body.price),
-      discountPercentage: req.body.discountPercentage ? parseFloat(req.body.discountPercentage) : 0,
+      discountPercentage: (typeof req.body.discountPercentage !== 'undefined' && req.body.discountPercentage !== '')
+        ? parseFloat(req.body.discountPercentage)
+        : 0,
       quantity: parseInt(req.body.quantity) || 1,
       category: req.body.category,
       image: imagePath,
@@ -53,19 +56,26 @@ exports.createProduct = async (req, res) => {
       }
     };
 
-    if (req.body.brand) productData.brand = req.body.brand;
-    if (req.body.sku) productData.sku = req.body.sku;
-    if (req.body.weight) productData.weight = parseFloat(req.body.weight);
-    if (req.body.dimensions) productData.dimensions = JSON.parse(req.body.dimensions);
-    if (req.body.warrantyInformation) productData.warrantyInformation = req.body.warrantyInformation;
-    if (req.body.shippingInformation) productData.shippingInformation = req.body.shippingInformation;
-    if (req.body.availabilityStatus) productData.availabilityStatus = req.body.availabilityStatus;
-    if (req.body.returnPolicy) productData.returnPolicy = req.body.returnPolicy;
-    if (req.body.minimumOrderQuantity) productData.minimumOrderQuantity = parseInt(req.body.minimumOrderQuantity);
-    if (req.body.tags) productData.tags = req.body.tags.split(',').map(tag => tag.trim());
+    if (typeof req.body.brand !== 'undefined' && req.body.brand !== '') productData.brand = req.body.brand;
+    if (typeof req.body.sku !== 'undefined' && req.body.sku !== '') productData.sku = req.body.sku;
+    if (typeof req.body.weight !== 'undefined' && req.body.weight !== '') productData.weight = parseFloat(req.body.weight);
+    if (typeof req.body.dimensions !== 'undefined' && req.body.dimensions !== '') {
+      try {
+        productData.dimensions = JSON.parse(req.body.dimensions);
+      } catch (parseErr) {
+      }
+    }
+    if (typeof req.body.warrantyInformation !== 'undefined' && req.body.warrantyInformation !== '') productData.warrantyInformation = req.body.warrantyInformation;
+    if (typeof req.body.shippingInformation !== 'undefined' && req.body.shippingInformation !== '') productData.shippingInformation = req.body.shippingInformation;
+    if (typeof req.body.availabilityStatus !== 'undefined' && req.body.availabilityStatus !== '') productData.availabilityStatus = req.body.availabilityStatus;
+    if (typeof req.body.returnPolicy !== 'undefined' && req.body.returnPolicy !== '') productData.returnPolicy = req.body.returnPolicy;
+    if (typeof req.body.minimumOrderQuantity !== 'undefined' && req.body.minimumOrderQuantity !== '') productData.minimumOrderQuantity = parseInt(req.body.minimumOrderQuantity);
+    if (typeof req.body.tags !== 'undefined' && req.body.tags !== '') productData.tags = req.body.tags.split(',').map(tag => tag.trim());
+
 
     const product = new Product(productData);
     await product.save();
+
 
     return res.status(201).json({
       success: true,
@@ -78,11 +88,11 @@ exports.createProduct = async (req, res) => {
 
     try {
       if (req.files?.image?.[0]) {
-        await fs.unlink(path.join(__dirname, '../uploads', req.files.image[0].filename));
+        await fsp.unlink(path.join(__dirname, '../uploads', req.files.image[0].filename));
       }
       if (req.files?.extraImages) {
         await Promise.all(req.files.extraImages.map(file =>
-          fs.unlink(path.join(__dirname, '../uploads', file.filename))
+          fsp.unlink(path.join(__dirname, '../uploads', file.filename))
         ));
       }
     } catch (cleanupErr) {
@@ -119,8 +129,8 @@ exports.updateProduct = async (req, res) => {
       try {
         if (product.image) {
           const oldImagePath = path.join(__dirname, '..', product.image.replace(/^\/+/, ""));
-          if (require("fs").existsSync(oldImagePath)) {
-            await fs.unlink(oldImagePath);
+          if (fs.existsSync(oldImagePath)) {
+            await fsp.unlink(oldImagePath);
             console.log(`[Product] Deleted old image for product: ${product._id}`);
           }
         }
@@ -191,8 +201,8 @@ exports.deleteProduct = async (req, res) => {
             "..",
             imgPath.replace(/^\/+/, "")
           );
-          if (require("fs").existsSync(fullPath)) {
-            await fs.unlink(fullPath);
+          if (fs.existsSync(fullPath)) {
+            await fsp.unlink(fullPath);
           }
         } catch (err) {
           console.error("Error deleting extra image:", err.message);
@@ -226,12 +236,27 @@ exports.deleteProductImage = async (req, res) => {
       return res.status(403).json({ error: "Not authorized" });
     }
 
-    const fullImagePath = path.join(__dirname, '..', imagePath);
-    if (fs.existsSync(fullImagePath)) {
-      fs.unlinkSync(fullImagePath);
+    const filename = path.basename(imagePath || '');
+    if (!filename) {
+      return res.status(400).json({ error: 'Invalid imagePath' });
     }
 
-    product.extraImages = product.extraImages.filter((img) => img !== imagePath);
+    const fullImagePath = path.join(__dirname, '..', 'uploads', filename);
+    if (fs.existsSync(fullImagePath)) {
+      try {
+        await fsp.unlink(fullImagePath);
+      } catch (unlinkErr) {
+        console.error('Error unlinking file:', unlinkErr);
+      }
+    }
+
+    product.extraImages = (product.extraImages || []).filter((img) => {
+      try {
+        return path.basename(img) !== filename;
+      } catch (e) {
+        return img !== imagePath;
+      }
+    });
     await product.save();
 
     res.json({
@@ -256,7 +281,6 @@ exports.getAllProducts = async (req, res) => {
       .sort("-createdAt")
       .lean();
 
-    // جلب متوسط التقييم وعدد المراجعات لكل منتج
     const productIds = products.map(p => p._id);
     const ratings = await Review.aggregate([
       { $match: { product: { $in: productIds } } },
@@ -358,7 +382,6 @@ exports.getFilteredProducts = asyncHandler(async (req, res) => {
       Product.countDocuments(filter)
     ]);
 
-    // جلب متوسط التقييم وعدد المراجعات لكل منتج
     const productIds = products.map(p => p._id);
     const ratings = await Review.aggregate([
       { $match: { product: { $in: productIds } } },
@@ -418,30 +441,74 @@ exports.getProductById = async (req, res) => {
 
 exports.getSellerProducts = async (req, res) => {
   try {
-    const { page = 1, limit = 10, search = "", category = "" } = req.query;
-    const skip = (page - 1) * limit;
+    const {
+      page = 1,
+      limit = 10,
+      search = "",
+      category = "",
+      sortBy = 'createdAt',
+      sortOrder = 'desc',
+      minPrice,
+      maxPrice,
+      stockFilter = 'all',
+      statusFilter = 'all'
+    } = req.query;
+
+    const pageNum = Math.max(1, parseInt(page));
+    const lim = Math.max(1, parseInt(limit));
+    const skip = (pageNum - 1) * lim;
 
     let query = { seller: req.user._id };
 
     if (search) {
-      query.title = { $regex: search, $options: 'i' };
+      query.$or = [
+        { title: { $regex: search, $options: 'i' } },
+        { description: { $regex: search, $options: 'i' } },
+        { sku: { $regex: search, $options: 'i' } }
+      ];
     }
 
     if (category) {
       query.category = category;
     }
 
+    if (minPrice || maxPrice) {
+      query.price = {};
+      if (minPrice && !isNaN(minPrice)) query.price.$gte = Number(minPrice);
+      if (maxPrice && !isNaN(maxPrice)) query.price.$lte = Number(maxPrice);
+    }
+
+    const mapStockFilter = (val) => {
+      if (!val || val === 'all') return null;
+      if (val === 'inStock') return { quantity: { $gt: 5 } };
+      if (val === 'lowStock') return { quantity: { $gt: 0, $lte: 5 } };
+      if (val === 'outOfStock') return { quantity: 0 };
+      return null;
+    };
+
+    const stockCond = mapStockFilter(stockFilter);
+    const statusCond = mapStockFilter(statusFilter);
+
+    if (stockCond) Object.assign(query, stockCond);
+    else if (statusCond) Object.assign(query, statusCond);
+
+    const allowedSortFields = ['createdAt', 'title', 'price', 'quantity'];
+    const sortField = allowedSortFields.includes(sortBy) ? sortBy : 'createdAt';
+    const sortDir = sortOrder === 'asc' ? 1 : -1;
+    const sortObj = { [sortField]: sortDir };
+
     const products = await Product.find(query)
       .skip(skip)
-      .limit(parseInt(limit));
+      .limit(lim)
+      .sort(sortObj);
 
     const total = await Product.countDocuments(query);
 
     res.json({
       products,
       total,
-      page: parseInt(page),
-      pages: Math.ceil(total / limit)
+      page: pageNum,
+      pages: Math.ceil(total / lim)
     });
   } catch (err) {
     res.status(500).json({
@@ -460,24 +527,27 @@ exports.getSellerDashboardStats = async (req, res) => {
 
     const productIds = products.map(p => p._id);
 
-    const orders = await Order.find({ "items.product": { $in: productIds } })
+    const recentOrders = await Order.find({ "items.product": { $in: productIds } })
       .sort("-createdAt")
       .limit(5);
 
     const ordersCount = await Order.countDocuments({ "items.product": { $in: productIds } });
 
+    const allOrders = await Order.find({ "items.product": { $in: productIds } });
+
     let totalSales = 0;
     const productSalesMap = {};
 
-    for (const order of orders) {
+    for (const order of allOrders) {
       for (const item of order.items) {
-        if (productIds.includes(item.product.toString())) {
+        if (productIds.map(p => p.toString()).includes(item.product.toString())) {
           totalSales += item.quantity * item.price;
 
-          if (!productSalesMap[item.product]) {
-            productSalesMap[item.product] = 0;
+          const prodId = item.product.toString();
+          if (!productSalesMap[prodId]) {
+            productSalesMap[prodId] = 0;
           }
-          productSalesMap[item.product] += item.quantity;
+          productSalesMap[prodId] += item.quantity;
         }
       }
     }
@@ -495,7 +565,7 @@ exports.getSellerDashboardStats = async (req, res) => {
       productsCount,
       ordersCount,
       totalSales,
-      recentOrders: orders,
+      recentOrders,
       popularProducts,
       stockAlerts,
     });
@@ -513,25 +583,22 @@ exports.getSellerSalesData = async (req, res) => {
 
     const orders = await Order.find({ "items.product": { $in: productIds } });
 
-    const salesByDate = {};
 
+    const ordersSales = [];
     for (const order of orders) {
-      const date = new Date(order.createdAt).toISOString().split("T")[0];
-
+      let orderTotal = 0;
       for (const item of order.items) {
         if (productIds.includes(item.product.toString())) {
-          if (!salesByDate[date]) salesByDate[date] = 0;
-          salesByDate[date] += item.quantity * item.price;
+          orderTotal += item.quantity * item.price;
         }
+      }
+      if (orderTotal > 0) {
+        ordersSales.push({ orderId: order._id, date: new Date(order.createdAt).toISOString().split('T')[0], total: orderTotal });
       }
     }
 
-    const salesData = Object.entries(salesByDate).map(([date, total]) => ({
-      date,
-      total,
-    }));
 
-    res.json(salesData);
+    res.json(ordersSales);
   } catch (err) {
     console.error("Error in getSellerSalesData:", err);
     res.status(500).json({ message: "Error loading sales data" });
@@ -545,6 +612,7 @@ exports.getPopularSellerProducts = async (req, res) => {
     const productIds = products.map(p => p._id.toString());
 
     const orders = await Order.find({ "items.product": { $in: productIds } });
+
 
     const productSales = {};
 
@@ -564,6 +632,7 @@ exports.getPopularSellerProducts = async (req, res) => {
       .map(([productId]) => productId);
 
     const popularProducts = await Product.find({ _id: { $in: sortedProducts } });
+
 
     res.json(popularProducts);
   } catch (err) {

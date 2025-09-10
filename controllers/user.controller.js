@@ -30,7 +30,6 @@ const deleteSelf = async (req, res) => {
       });
     }
 
-    // Allow self deletion. Admins are protected from being deleted by non-admins via admin delete route.
     await userToDelete.deleteOne();
     console.log(`[User] Self-deleted: ${userToDelete._id}`);
     res.status(200).json({

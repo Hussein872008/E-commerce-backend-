@@ -54,6 +54,13 @@ const orderSchema = new mongoose.Schema(
       enum: ["Pending", "Completed", "Failed", "Refunded"],
       default: "Pending"
     },
+    paymentInfo: {
+      method: { type: String },
+      brand: { type: String },
+      last4: { type: String },
+      expiry: { type: String },
+      providerId: { type: String }
+    },
     statusHistory: [{
       status: { type: String, required: true },
       changedAt: { type: Date, default: Date.now },

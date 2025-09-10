@@ -36,6 +36,40 @@ const productSchema = new mongoose.Schema({
     required: [true, 'Category is required'],
     trim: true
   },
+  brand: {
+    type: String,
+    trim: true,
+    default: ''
+  },
+  weight: {
+    type: Number,
+    default: 0
+  },
+  dimensions: {
+    width: { type: Number, default: 0 },
+    height: { type: Number, default: 0 },
+    depth: { type: Number, default: 0 }
+  },
+  warrantyInformation: {
+    type: String,
+    trim: true,
+    default: ''
+  },
+  shippingInformation: {
+    type: String,
+    trim: true,
+    default: ''
+  },
+  returnPolicy: {
+    type: String,
+    trim: true,
+    default: ''
+  },
+  minimumOrderQuantity: {
+    type: Number,
+    default: 1
+  },
+  tags: [{ type: String, trim: true }],
   sku: {
     type: String,
     trim: true,
@@ -67,6 +101,16 @@ productSchema.pre('save', function(next) {
 
 productSchema.virtual('discountedPrice').get(function() {
   return this.price;
+});
+
+productSchema.virtual('availabilityStatus').get(function() {
+  if (this.quantity === 0) {
+    return 'Out of Stock';
+  } else if (this.quantity <= 5) {
+    return 'Low Stock';
+  } else {
+    return 'In Stock';
+  }
 });
 
 productSchema.set('toJSON', { virtuals: true });

@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 const Order = require("../models/order.model");
 const Product = require("../models/product.model");
 const Cart = require("../models/cart.model");
+const { createNotification } = require("./notification.controller");
 
 
 const getFullImageUrl = (image) => {
@@ -14,16 +15,31 @@ const getFullImageUrl = (image) => {
   return `${backendUrl}/uploads/${cleanImage}`;
 };
 
+const sanitizeOrderForClient = (orderObj, options = {}) => {
+  const { maskLast4 = true } = options;
+  if (!orderObj) return orderObj;
+  const o = typeof orderObj.toObject === 'function' ? orderObj.toObject() : { ...orderObj };
+  if (o.paymentInfo) {
+    const last4 = o.paymentInfo.last4 || undefined;
+    o.paymentInfo = {
+      brand: o.paymentInfo.brand || undefined,
+      last4: last4 ? (maskLast4 ? `****${last4}` : `${last4}`) : undefined,
+      expiry: o.paymentInfo.expiry || undefined,
+    };
+  }
+  return o;
+};
+
 
 exports.createOrder = async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
   try {
-    const { items, shippingAddress, totalAmount, paymentMethod, cardNumber } = req.body;
+  const { items, shippingAddress, totalAmount, paymentMethod, cardNumber, cardExpiry, cardBrand, paymentProviderId, cardLast4 } = req.body;
     const userId = req.user._id;
 
-    if (paymentMethod === "Card") {
-      if (!cardNumber || !/^\d{13,19}$/.test(cardNumber)) {
+    if (paymentMethod && paymentMethod.toLowerCase().includes('card')) {
+      if (cardNumber && !/^\d{13,19}$/.test(cardNumber)) {
         await session.abortTransaction();
         console.error(`[Order] Invalid card number for user: ${userId}`);
         return res.status(400).json({
@@ -94,6 +110,16 @@ exports.createOrder = async (req, res) => {
       });
     }
 
+    const paymentInfo = {};
+    if (paymentMethod && paymentMethod.toLowerCase().includes('card')) {
+    if (cardLast4) paymentInfo.last4 = cardLast4.toString();
+    else if (cardNumber) paymentInfo.last4 = cardNumber.toString().slice(-4);
+      if (cardExpiry) paymentInfo.expiry = cardExpiry;
+      if (cardBrand) paymentInfo.brand = cardBrand;
+      if (paymentProviderId) paymentInfo.providerId = paymentProviderId;
+      paymentInfo.method = 'card';
+    }
+
     const order = new Order({
       buyer: userId,
       items: items.map((item) => ({
@@ -104,11 +130,27 @@ exports.createOrder = async (req, res) => {
       shippingAddress,
       totalAmount,
       paymentMethod: paymentMethod || "Cash on Delivery",
+      paymentInfo: Object.keys(paymentInfo).length ? paymentInfo : undefined,
       paymentStatus: "Completed",
       status: "Processing",
     });
 
     await Product.bulkWrite(stockUpdates, { session });
+    
+    for (const item of items) {
+      const product = products.find(p => p._id.equals(item.product));
+      const newQuantity = product.quantity - item.quantity;
+      
+      if (newQuantity <= 5) {
+        await createNotification({
+          recipient: product.seller,
+          type: 'product',
+          message: `Product "${product.title}" is low in stock (${newQuantity} pieces remaining)`,
+          relatedId: product._id
+        });
+      }
+    }
+    
     await order.save({ session });
     await Cart.findOneAndUpdate(
       { user: userId },
@@ -116,12 +158,51 @@ exports.createOrder = async (req, res) => {
       { session }
     );
 
+    const sellerIds = await Product.distinct('seller', {
+      _id: { $in: items.map(item => item.product) }
+    });
+
     await session.commitTransaction();
+
+    try {
+      const notificationPromises = sellerIds.map(async (sellerId) => {
+        const notification = await createNotification({
+          recipient: sellerId,
+          type: 'order',
+          message: `New order (#${order._id})! Please review order details`,
+          relatedId: order._id,
+          orderData: {
+            orderId: order._id,
+            items: order.items,
+            totalAmount: order.totalAmount
+          }
+        });
+
+        if (global.io) {
+          global.io.to(sellerId.toString()).emit('newOrder', {
+            notification,
+            order: {
+              _id: order._id,
+              items: order.items,
+              totalAmount: order.totalAmount,
+              status: order.status,
+              paymentInfo: sanitizeOrderForClient(order).paymentInfo
+            }
+          });
+        }
+
+        return notification;
+      });
+
+      await Promise.all(notificationPromises);
+    } catch (notificationError) {
+      console.error('Error sending notifications:', notificationError);
+    }
     console.log(`[Order] Order created successfully for user: ${userId}, orderId: ${order._id}`);
     res.status(201).json({
       success: true,
       message: "Order created successfully.",
-      order,
+      order: sanitizeOrderForClient(order),
     });
   } catch (err) {
     await session.abortTransaction();
@@ -146,7 +227,7 @@ exports.getMyOrders = async (req, res) => {
       })
       .sort("-createdAt");
 
-    const fixedOrders = orders.map((order) => {
+  const fixedOrders = orders.map((order) => {
       const fixedItems = order.items.map((item) => {
         let imageUrl = item.product
           ? getFullImageUrl(item.product.image)
@@ -163,10 +244,11 @@ exports.getMyOrders = async (req, res) => {
         };
       });
 
-      return {
+      const o = {
         ...order.toObject(),
         items: fixedItems,
       };
+      return sanitizeOrderForClient(o);
     });
 
     res.json({
@@ -229,11 +311,34 @@ exports.updateOrderStatus = async (req, res) => {
       }
       order.status = status;
       await order.save();
+
+      await createNotification({
+        recipient: order.buyer,
+        type: 'order',
+        message: `Your order (#${order._id}) status has been updated to ${status}`,
+        relatedId: order._id
+      });
+
+      if (status === 'Processing' || status === 'Delivered') {
+        const sellerIds = await Product.distinct('seller', {
+          _id: { $in: order.items.map(item => item.product) }
+        });
+
+        for (const sellerId of sellerIds) {
+          await createNotification({
+            recipient: sellerId,
+            type: 'order',
+            message: `Order (#${order._id}) has been ${status.toLowerCase()}`,
+            relatedId: order._id
+          });
+        }
+      }
+
       console.log(`[Order] Order status updated: ${order._id}, new status: ${status}, user: ${req.user?._id}`);
       return res.json({ 
         success: true,
         message: "Order status updated successfully.",
-        order 
+        order: sanitizeOrderForClient(order)
       });
     }
     console.error(`[Order] Not authorized to update order status, user: ${req.user?._id}`);
@@ -269,15 +374,16 @@ exports.searchOrders = async (req, res) => {
       query.createdAt = { $gte: new Date(dateFrom), $lte: new Date(dateTo) };
     }
 
-    const orders = await Order.find(query)
+  const orders = await Order.find(query)
       .populate("items.product", "title price image")
       .sort("-createdAt");
 
     const total = orders.length;
+    const sanitized = orders.map(o => sanitizeOrderForClient(o));
 
     res.json({
       success: true,
-      orders,
+      orders: sanitized,
       total,
       page: parseInt(page)
     });
@@ -356,7 +462,7 @@ exports.cancelOrder = async (req, res) => {
     res.json({
       success: true,
       message: "Order cancelled successfully.",
-      order
+      order: sanitizeOrderForClient(order)
     });
 
   } catch (err) {
@@ -383,7 +489,7 @@ exports.updatePaymentStatus = async (req, res) => {
       { paymentStatus: status },
       { new: true }
     );
-    res.json({ success: true, order });
+  res.json({ success: true, order: sanitizeOrderForClient(order) });
   } catch (err) {
     res.status(500).json({ error: "Failed to update payment status" });
   }
@@ -421,14 +527,15 @@ exports.getSellerStats = async (req, res) => {
 
 exports.getAllOrders = async (req, res) => {
   try {
-    const orders = await Order.find()
+  const orders = await Order.find()
       .populate("buyer", "name email")
       .populate("items.product", "title price")
       .sort("-createdAt");
 
+    const sanitized = orders.map(o => sanitizeOrderForClient(o));
     res.json({
       success: true,
-      orders
+      orders: sanitized
     });
   } catch (err) {
     res.status(500).json({ error: "Failed to fetch all orders" });
@@ -470,7 +577,7 @@ exports.adminUpdateOrder = async (req, res) => {
     res.json({
       success: true,
       message: "Order updated successfully",
-      order
+      order: sanitizeOrderForClient(order)
     });
   } catch (err) {
     res.status(500).json({ error: "Failed to update order" });
@@ -506,7 +613,7 @@ exports.getOrderDetails = async (req, res) => {
 
     res.json({
       success: true,
-      order: order.toObject()
+      order: sanitizeOrderForClient(order)
     });
   } catch (err) {
     res.status(500).json({ error: "Failed to fetch order details" });
@@ -528,7 +635,7 @@ exports.addTrackingNumber = async (req, res) => {
     res.json({
       success: true,
       message: "Tracking number added",
-      order
+      order: sanitizeOrderForClient(order)
     });
   } catch (err) {
     res.status(500).json({ error: "Failed to add tracking number" });
@@ -625,12 +732,20 @@ exports.getSellerOrders = async (req, res) => {
           }
         };
       });
-      return {
+      const o = {
         ...order.toObject(),
         buyer: buyerObj,
         trackingNumber: order.trackingNumber || "Unknown",
         items: cleanItems
       };
+      if (o.paymentInfo) {
+        o.paymentInfo = {
+          brand: o.paymentInfo.brand || undefined,
+          last4: o.paymentInfo.last4 ? (`****${o.paymentInfo.last4}`) : undefined,
+          expiry: o.paymentInfo.expiry || undefined,
+        };
+      }
+      return o;
     });
 
     res.json({
@@ -662,9 +777,10 @@ exports.getRecentOrders = async (req, res) => {
       .sort({ createdAt: -1 })
       .limit(10);
 
+    const sanitized = orders.map(o => sanitizeOrderForClient(o));
     res.json({
       success: true,
-      orders
+      orders: sanitized
     });
   } catch (err) {
     console.error("Error fetching recent orders:", err);
