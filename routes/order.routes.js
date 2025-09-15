@@ -2,7 +2,8 @@ const express = require("express");
 const router = express.Router();
 const orderController = require("../controllers/order.controller");
 const { validate, validateOrder } = require("../middleware/validate.middleware");
-const { verifyToken, checkCancelPermission } = require("../middleware/auth.middleware");
+const { verifyToken, checkCancelPermission, restrictTo } = require("../middleware/auth.middleware");
+const { checkRole } = require("../middleware/role.middleware");
 const { body } = require("express-validator");
 const createOrderValidation = [
   body('items').isArray({ min: 1 }).withMessage('Order must contain at least one item'),
@@ -61,12 +62,14 @@ router.get(
 router.get(
   "/seller",
   verifyToken,
+  checkRole(['seller','admin']),
   orderController.getSellerOrders
 );
 
 router.get(
   "/seller/stats",
   verifyToken,
+  checkRole(['seller','admin']),
   orderController.getSellerStats
 );
 
@@ -74,23 +77,28 @@ router.put(
   "/seller/update/:id",
   verifyToken,
   validate(updateStatusValidation),
+  checkRole(['seller','admin']),
+  orderController.updateOrderStatus
 );
 
 router.get(
   "/all",
   verifyToken,
+  restrictTo('admin'),
   orderController.getAllOrders
 );
 
 router.get(
   "/admin/stats",
   verifyToken,
+  restrictTo('admin'),
   orderController.getAdminStats
 );
 
 router.put(
   "/admin/update/:id",
   verifyToken,
+  restrictTo('admin'),
   validate(updateStatusValidation),
   orderController.adminUpdateOrder
 );

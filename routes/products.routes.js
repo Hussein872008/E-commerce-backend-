@@ -19,7 +19,6 @@ router.get("/filtered", productController.getFilteredProducts);
 router.get("/categories", productController.getCategories);
 router.get("/category-counts", productController.getCategoryCounts);
 router.get("/recent", productController.getRecentProducts);
-router.get("/:id", productController.getProductById);
 
 router.post(
   "/",
@@ -43,9 +42,11 @@ router.delete("/:id", verifyToken, productController.deleteProduct);
 
 router.put("/:id/delete-image", verifyToken, productController.deleteProductImage);
 
-router.get("/seller/my-products", verifyToken, productController.getSellerProducts);
-router.get("/seller/dashboard", verifyToken, productController.getSellerDashboardStats);
-router.get("/seller/sales-data", verifyToken, productController.getSellerSalesData);
-router.get("/seller/popular", verifyToken, productController.getPopularSellerProducts);
+router.get("/seller/my-products", verifyToken, checkRole(['seller','admin']), productController.getSellerProducts);
+router.get("/seller/dashboard", verifyToken, checkRole(['seller','admin']), productController.getSellerDashboardStats);
+router.get("/seller/sales-data", verifyToken, checkRole(['seller','admin']), productController.getSellerSalesData);
+router.get("/seller/popular", verifyToken, checkRole(['seller','admin']), productController.getPopularSellerProducts);
+
+router.get("/:id", productController.getProductById);
 
 module.exports = router;

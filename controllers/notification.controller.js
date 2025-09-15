@@ -68,8 +68,16 @@ exports.createNotification = async ({
     await notification.save();
     
     const fullNotification = await Notification.findById(notification._id);
+    console.log('[Notification] Created notification', { id: fullNotification._id, recipient: String(recipient), type: fullNotification.type, message: fullNotification.message });
     
     if (global.io) {
+      try {
+        const socketsInRoom = await global.io.in(String(recipient)).fetchSockets();
+        console.log('[Notification] sockets in recipient room', String(recipient), socketsInRoom.length);
+      } catch (roomErr) {
+        console.warn('[Notification] could not fetch sockets in room', String(recipient), roomErr.message || roomErr);
+      }
+
       const [allNotifications, unreadCount] = await Promise.all([
         Notification.find({ recipient })
           .sort({ createdAt: -1 })
@@ -79,13 +87,14 @@ exports.createNotification = async ({
           read: false
         })
       ]);
-
       global.io.to(recipient.toString()).emit('notificationUpdate', {
         newNotification: fullNotification,
         allNotifications,
         unreadCount,
         highlightId: relatedId
       });
+      global.io.to(recipient.toString()).emit('newNotification', fullNotification);
+      console.log('[Notification] Emitted notificationUpdate + newNotification to room', String(recipient), { unreadCount, highlightId: relatedId });
     }
     
     return fullNotification;

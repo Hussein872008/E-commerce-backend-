@@ -1,4 +1,5 @@
 const Product = require("../models/product.model");
+const checkProductStock = require('../utils/stockChecker');
 const Order = require("../models/order.model");
 const fs = require("fs");
 const fsp = require("fs").promises;
@@ -79,6 +80,28 @@ exports.createProduct = async (req, res) => {
     if (req.body.tags)
       productData.tags = req.body.tags.split(",").map((tag) => tag.trim());
 
+    if (!productData.sku) {
+      const slug = (productData.title || 'prd')
+        .toString()
+        .toUpperCase()
+        .replace(/[^A-Z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 20);
+
+      let attempt = 0;
+      let sku;
+      do {
+        const rand = Math.floor(1000 + Math.random() * 9000);
+        sku = `${slug}-${Date.now().toString().slice(-5)}-${rand}`;
+
+        const exists = await Product.findOne({ sku }).select('_id');
+        if (!exists) break;
+        attempt += 1;
+      } while (attempt < 5);
+
+      productData.sku = sku;
+    }
+
     const product = new Product(productData);
     await product.save();
 
@@ -112,10 +135,11 @@ exports.updateProduct = async (req, res) => {
     }
 
     const { title, description, price, quantity, category } = req.body;
-    if (title) product.title = title;
-    if (description) product.description = description;
-    if (price) product.price = price;
-    if (quantity) product.quantity = quantity;
+  const prevQuantity = product.quantity;
+  if (title) product.title = title;
+  if (description) product.description = description;
+  if (price) product.price = price;
+  if (typeof quantity !== 'undefined') product.quantity = quantity;
     if (category) product.category = category;
 
     if (req.files?.image?.[0]) {
@@ -128,6 +152,14 @@ exports.updateProduct = async (req, res) => {
     }
 
     await product.save();
+
+    try {
+      if (typeof quantity !== 'undefined' && prevQuantity !== product.quantity) {
+        await checkProductStock(product);
+      }
+    } catch (e) {
+      console.error('Error running stockChecker after product update:', e);
+    }
     res.json({
       success: true,
       message: "Product updated successfully.",

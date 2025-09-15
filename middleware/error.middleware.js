@@ -38,15 +38,16 @@ class ConflictError extends AppError {
   }
 }
 
+const logger = require('./logger');
+
 const errorHandler = (err, req, res, next) => {
-  console.error('Error handler called:', err.message);
-  console.error(err.stack);
+  logger.error('Error handler called:', err);
 
   err.statusCode = err.statusCode || 500;
   err.status = err.status || 'error';
   err.message = err.message || 'Something went wrong';
 
-  console.log('Sending error response:', {
+  logger.info('Sending error response', {
     statusCode: err.statusCode,
     status: err.status,
     message: err.message
@@ -56,7 +57,7 @@ const errorHandler = (err, req, res, next) => {
     success: false,
     status: err.status,
     message: err.message,
-  stack: err.stack
+    stack: err.stack
   });
 };
 

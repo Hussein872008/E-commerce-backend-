@@ -6,8 +6,9 @@ exports.verifyToken = async (req, res, next) => {
 
   if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
     token = req.headers.authorization.split(' ')[1];
-  } else if (req.cookies?.jwt) {
-    token = req.cookies.jwt;
+  } else if (req.cookies?.accessToken) {
+
+    token = req.cookies.accessToken;
   }
 
   if (!token) {
@@ -85,7 +86,7 @@ exports.checkCancelPermission = async (req, res, next) => {
       item.product?.seller?.toString() === req.user._id.toString()
     );
 
-    if (!isBuyer && !isAdmin) {
+  if (!isBuyer && !isAdmin && !isSeller) {
       return res.status(403).json({
         success: false,
         error: "You do not have permission to cancel this order"

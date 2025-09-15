@@ -83,11 +83,15 @@ orderSchema.index({ 'items.product': 1 });
 
 orderSchema.pre('save', function (next) {
   if (this.isModified('status')) {
-    this.statusHistory.push({
-      status: this.status,
-      changedAt: new Date(),
-  changedBy: this.buyer
-    });
+    const last = Array.isArray(this.statusHistory) && this.statusHistory.length
+      ? this.statusHistory[this.statusHistory.length - 1]
+      : null;
+    if (!last || String(last.status) !== String(this.status)) {
+      this.statusHistory.push({
+        status: this.status,
+        changedAt: new Date(),
+      });
+    }
   }
   next();
 });

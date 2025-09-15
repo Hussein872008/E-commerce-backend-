@@ -33,10 +33,10 @@ const getRefreshCookieOptions = () => {
   })();
 
   return {
-    httpOnly: true,
-    secure: false,
-    sameSite: 'lax',
-    maxAge: maxAgeDays
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+  maxAge: maxAgeDays
   };
 };
 
@@ -332,12 +332,18 @@ exports.resetPassword = async (req, res, next) => {
       console.warn('Could not set refresh token cookie:', e.message || e);
     }
 
+    user.password = undefined;
     res.status(200).json({
       success: true,
       message: 'Your password has been reset successfully.',
       token: accessToken,
       refreshToken,
-      user
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role
+      }
     });
     console.log('Response sent: Password reset successful');
 

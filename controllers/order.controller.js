@@ -134,6 +134,9 @@ exports.createOrder = async (req, res) => {
       paymentStatus: "Completed",
       status: "Processing",
     });
+    order.statusHistory = [
+      { status: order.status || 'Processing', changedAt: new Date(), changedBy: userId }
+    ];
 
     await Product.bulkWrite(stockUpdates, { session });
     
@@ -289,8 +292,15 @@ exports.updateOrderStatus = async (req, res) => {
       });
     }
 
+    if (req.user.role === "buyer") {
+      return res.status(403).json({
+        success: false,
+        error: "Buyers are not allowed to update order status."
+      });
+    }
+
     if (req.user.role === "seller") {
-      if (order.status !== "Processing" || status !== "Shipped") {
+      if (!(order.status === "Processing" && status === "Shipped")) {
         console.error(`[Order] Seller not authorized to change status, user: ${req.user?._id}`);
         return res.status(403).json({
           success: false,
@@ -299,8 +309,8 @@ exports.updateOrderStatus = async (req, res) => {
         });
       }
     }
- 
-    if (req.user.role === "admin" || req.user.role === "seller") {
+
+    if (req.user.role === "admin") {
       if (status === "Cancelled" && order.status !== "Cancelled") {
         for (let item of order.items) {
           await Product.findByIdAndUpdate(
@@ -309,44 +319,52 @@ exports.updateOrderStatus = async (req, res) => {
           );
         }
       }
-      order.status = status;
-      await order.save();
+    }
 
-      await createNotification({
+    order.status = status;
+    order.statusHistory = order.statusHistory || [];
+    order.statusHistory.push({ status, changedAt: new Date(), changedBy: req.user._id });
+    await order.save();
+
+    try {
+      const buyerNotification = await createNotification({
         recipient: order.buyer,
         type: 'order',
         message: `Your order (#${order._id}) status has been updated to ${status}`,
         relatedId: order._id
       });
+      console.log('[Order] Sent order-status notification to buyer', { orderId: String(order._id), buyer: String(order.buyer), status, notificationId: buyerNotification?._id });
+    } catch (notifErr) {
+      console.error('[Order] Failed to create/emit buyer notification for order status update', { orderId: String(order._id), buyer: String(order.buyer), status, error: notifErr });
+    }
 
-      if (status === 'Processing' || status === 'Delivered') {
-        const sellerIds = await Product.distinct('seller', {
-          _id: { $in: order.items.map(item => item.product) }
-        });
+    if (status === 'Processing' || status === 'Delivered') {
+      const sellerIds = await Product.distinct('seller', {
+        _id: { $in: order.items.map(item => item.product) }
+      });
 
-        for (const sellerId of sellerIds) {
-          await createNotification({
+      for (const sellerId of sellerIds) {
+        try {
+          const sellerNotification = await createNotification({
             recipient: sellerId,
             type: 'order',
             message: `Order (#${order._id}) has been ${status.toLowerCase()}`,
             relatedId: order._id
           });
+          console.log('[Order] Sent order-status notification to seller', { orderId: String(order._id), seller: String(sellerId), status, notificationId: sellerNotification?._id });
+        } catch (notifErr) {
+          console.error('[Order] Failed to create/emit seller notification for order status update', { orderId: String(order._id), seller: String(sellerId), status, error: notifErr });
         }
       }
-
-      console.log(`[Order] Order status updated: ${order._id}, new status: ${status}, user: ${req.user?._id}`);
-      return res.json({ 
-        success: true,
-        message: "Order status updated successfully.",
-        order: sanitizeOrderForClient(order)
-      });
     }
-    console.error(`[Order] Not authorized to update order status, user: ${req.user?._id}`);
-    return res.status(403).json({
-      success: false,
-      error: "Not authorized to update order status.",
-      details: "Not authorized to update order status."
+
+    console.log(`[Order] Order status updated: ${order._id}, new status: ${status}, user: ${req.user?._id}`);
+    return res.json({ 
+      success: true,
+      message: "Order status updated successfully.",
+      order: sanitizeOrderForClient(order)
     });
+
   } catch (err) {
     console.error(`[Order] Error updating order status for order: ${req.params.id}, user: ${req.user?._id}`, err);
     res.status(500).json({ 
@@ -356,71 +374,7 @@ exports.updateOrderStatus = async (req, res) => {
     });
   }
 };
-exports.searchOrders = async (req, res) => {
-  try {
-  const { status, dateFrom, dateTo, page = 1 } = req.query;
-  const query = {};
 
-    if (req.user.role === 'buyer') {
-      query.buyer = req.user._id;
-    } else if (req.user.role === 'seller') {
-      query['items.product'] = { 
-        $in: await Product.find({ seller: req.user._id }).distinct('_id') 
-      };
-    }
-
-    if (status) query.status = status;
-    if (dateFrom && dateTo) {
-      query.createdAt = { $gte: new Date(dateFrom), $lte: new Date(dateTo) };
-    }
-
-  const orders = await Order.find(query)
-      .populate("items.product", "title price image")
-      .sort("-createdAt");
-
-    const total = orders.length;
-    const sanitized = orders.map(o => sanitizeOrderForClient(o));
-
-    res.json({
-      success: true,
-      orders: sanitized,
-      total,
-      page: parseInt(page)
-    });
-  } catch (err) {
-    console.error(`[Order] Error searching orders, user: ${req.user?._id}`, err);
-    res.status(500).json({
-      success: false,
-      error: "Error searching orders.",
-      details: err.message
-    });
-  }
-};
-exports.getOrderStats = async (req, res) => {
-  try {
-            const userId = req.user._id;
-    
-    const orders = await Order.find({ buyer: userId });
-    
-    const stats = {
-      total: orders.length,
-      completed: orders.filter(o => o.status === "Delivered").length,
-      pending: orders.filter(o => o.status === "Processing").length,
-      cancelled: orders.filter(o => o.status === "Cancelled").length
-    };
-
-    res.json({
-      success: true,
-      stats
-    });
-  } catch (err) {
-    console.error("Error fetching order stats:", err);
-    res.status(500).json({ 
-      error: "Failed to fetch order statistics.",
-      details: err.message 
-    });
-  }
-};
 
 exports.cancelOrder = async (req, res) => {
   console.log('Cancelling order:', req.params.id);
@@ -440,6 +394,21 @@ exports.cancelOrder = async (req, res) => {
         error: "Order not found or cannot be cancelled."
       });
     }
+
+    if (req.user.role === "buyer" && order.buyer.toString() !== req.user._id.toString()) {
+      await session.abortTransaction();
+      return res.status(403).json({ error: "Not authorized to cancel this order" });
+    }
+
+    if (req.user.role === "seller") {
+      const sellerProductIds = await Product.find({ seller: req.user._id }).distinct('_id');
+      const owns = order.items.some(item => sellerProductIds.includes(item.product.toString()));
+      if (!owns) {
+        await session.abortTransaction();
+        return res.status(403).json({ error: "Not authorized to cancel this order" });
+      }
+    }
+
 
     for (const item of order.items) {
       await Product.findByIdAndUpdate(
@@ -476,6 +445,94 @@ exports.cancelOrder = async (req, res) => {
     session.endSession();
   }
 };
+
+exports.searchOrders = async (req, res) => {
+  try {
+  const { status, dateFrom, dateTo } = req.query;
+  const includeShipped = req.query.includeShipped === 'true' || req.query.includeShipped === '1';
+  const page = parseInt(req.query.page, 10) || 1;
+  const limit = parseInt(req.query.limit, 10) || 10;
+  const query = {};
+
+    if (req.user.role === 'buyer') {
+      query.buyer = req.user._id;
+    } else if (req.user.role === 'seller') {
+      query['items.product'] = { 
+        $in: await Product.find({ seller: req.user._id }).distinct('_id') 
+      };
+    }
+
+
+      if (status) {
+        if (status === 'Processing' && includeShipped) {
+          query.$or = [ { status: 'Processing' }, { status: 'Shipped' } ];
+        } else {
+          query.status = status;
+        }
+      }
+
+      if (dateFrom || dateTo) {
+        query.createdAt = {};
+        if (dateFrom) query.createdAt.$gte = new Date(dateFrom);
+        if (dateTo) query.createdAt.$lte = new Date(dateTo);
+      }
+
+      const total = await Order.countDocuments(query);
+      const pages = Math.max(1, Math.ceil(total / limit));
+
+      const orders = await Order.find(query)
+        .populate("items.product", "title price image seller")
+        .sort("-createdAt")
+        .skip((page - 1) * limit)
+        .limit(limit);
+
+      const sanitized = orders.map(o => sanitizeOrderForClient(o));
+
+      res.json({
+        success: true,
+        orders: sanitized,
+        total,
+        page,
+        pages,
+        limit
+      });
+  } catch (err) {
+    console.error(`[Order] Error searching orders, user: ${req.user?._id}`, err);
+    res.status(500).json({
+      success: false,
+      error: "Error searching orders.",
+      details: err.message
+    });
+  }
+};
+exports.getOrderStats = async (req, res) => {
+  try {
+            const userId = req.user._id;
+    
+    const orders = await Order.find({ buyer: userId });
+    
+    const stats = {
+      total: orders.length,
+      completed: orders.filter(o => o.status === "Delivered").length,
+      pending: orders.filter(o => o.status === "Processing").length,
+      shipped: orders.filter(o => o.status === "Shipped").length,
+      cancelled: orders.filter(o => o.status === "Cancelled").length
+    };
+
+    res.json({
+      success: true,
+      stats
+    });
+  } catch (err) {
+    console.error("Error fetching order stats:", err);
+    res.status(500).json({ 
+      error: "Failed to fetch order statistics.",
+      details: err.message 
+    });
+  }
+};
+
+
 
 
 
@@ -564,14 +621,61 @@ exports.getAdminStats = async (req, res) => {
 
 exports.adminUpdateOrder = async (req, res) => {
   try {
-    const order = await Order.findByIdAndUpdate(
-      req.params.id,
-      { status: req.body.status },
-      { new: true }
-    );
-
+    const order = await Order.findById(req.params.id);
     if (!order) {
       return res.status(404).json({ error: "Order not found" });
+    }
+
+    const status = req.body.status;
+
+    if (status === 'Cancelled' && order.status !== 'Cancelled') {
+      for (let item of order.items) {
+        try {
+          await Product.findByIdAndUpdate(
+            item.product._id || item.product,
+            { $inc: { quantity: item.quantity } }
+          );
+        } catch (err) {
+          console.error('[AdminUpdateOrder] Failed to restore stock for product', item.product, err);
+        }
+      }
+    }
+
+    order.status = status;
+    order.statusHistory = order.statusHistory || [];
+    order.statusHistory.push({ status, changedAt: new Date(), changedBy: req.user._id });
+    await order.save();
+
+    try {
+      const buyerNotification = await createNotification({
+        recipient: order.buyer,
+        type: 'order',
+        message: `Your order (#${order._id}) status has been updated to ${status}`,
+        relatedId: order._id
+      });
+      console.log('[AdminUpdateOrder] Sent order-status notification to buyer', { orderId: String(order._id), buyer: String(order.buyer), status, notificationId: buyerNotification?._id });
+    } catch (notifErr) {
+      console.error('[AdminUpdateOrder] Failed to create/emit buyer notification for order status update', { orderId: String(order._id), buyer: String(order.buyer), status, error: notifErr });
+    }
+
+    if (status === 'Processing' || status === 'Delivered') {
+      const sellerIds = await Product.distinct('seller', {
+        _id: { $in: order.items.map(item => item.product) }
+      });
+
+      for (const sellerId of sellerIds) {
+        try {
+          const sellerNotification = await createNotification({
+            recipient: sellerId,
+            type: 'order',
+            message: `Order (#${order._id}) has been ${status.toLowerCase()}`,
+            relatedId: order._id
+          });
+          console.log('[AdminUpdateOrder] Sent order-status notification to seller', { orderId: String(order._id), seller: String(sellerId), status, notificationId: sellerNotification?._id });
+        } catch (notifErr) {
+          console.error('[AdminUpdateOrder] Failed to create/emit seller notification for order status update', { orderId: String(order._id), seller: String(sellerId), status, error: notifErr });
+        }
+      }
     }
 
     res.json({
@@ -590,7 +694,7 @@ exports.getOrderDetails = async (req, res) => {
       .populate("buyer", "name email")
       .populate({
         path: "items.product",
-        select: "title price image",
+        select: "title price image seller",
         transform: doc => {
           if (!doc) return null;
           const backendUrl = process.env.BACKEND_URL || process.env.FRONTEND_URL;
@@ -598,6 +702,7 @@ exports.getOrderDetails = async (req, res) => {
             _id: doc._id,
             title: doc.title,
             price: doc.price,
+            seller: doc.seller,
             image: doc.image?.startsWith('http') ? doc.image : `${backendUrl}${doc.image.startsWith('/') ? '' : '/'}${doc.image}`
           };
         }
@@ -609,6 +714,11 @@ exports.getOrderDetails = async (req, res) => {
 
     if (req.user.role === "buyer" && order.buyer._id.toString() !== req.user._id.toString()) {
       return res.status(403).json({ error: "Not authorized" });
+    }
+
+    if (req.user.role === 'seller') {
+      const owns = order.items.some(item => item.product && String(item.product.seller) === String(req.user._id));
+      if (!owns) return res.status(403).json({ error: 'Not authorized' });
     }
 
     res.json({

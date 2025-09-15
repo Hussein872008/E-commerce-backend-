@@ -176,6 +176,10 @@ const updateUserProfile = async (req, res) => {
   const { name, currentPassword, newPassword } = req.body;
     const user = await User.findById(req.params.id).select('+password');
 
+    if (req.user._id.toString() !== req.params.id && req.user.role !== 'admin') {
+      return res.status(403).json({ success: false, message: 'Not authorized to update this profile' });
+    }
+
     if (!user) {
       return res.status(404).json({ 
         success: false,
