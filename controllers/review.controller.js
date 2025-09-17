@@ -18,6 +18,9 @@ const getCurrentUserIdFromToken = (req) => {
 
 exports.createReview = async (req, res) => {
   try {
+    if (!req.user || req.user.role !== 'buyer') {
+      return res.status(403).json({ success: false, message: 'Only buyer accounts can create reviews' });
+    }
     const { productId, rating, comment } = req.body;
     const userId = req.user._id;
 
@@ -77,6 +80,9 @@ exports.createReview = async (req, res) => {
 
 exports.updateReview = async (req, res) => {
   try {
+    if (!req.user || req.user.role !== 'buyer') {
+      return res.status(403).json({ success: false, message: 'Only buyer accounts can update reviews' });
+    }
     const { id } = req.params;
     const { rating, comment } = req.body;
     const userId = req.user._id;

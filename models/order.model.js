@@ -32,6 +32,11 @@ const orderSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
+    seller: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: false
+    },
     items: [orderItemSchema],
     shippingAddress: shippingAddressSchema,
     totalAmount: {

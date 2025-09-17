@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const cartController = require('../controllers/cart.controller');
 const authMiddleware = require('../middleware/auth.middleware');
+const { checkRole } = require('../middleware/role.middleware');
 const { validate } = require('../middleware/validate.middleware');
 const { body, param } = require('express-validator');
 
@@ -24,20 +25,24 @@ router.get('/', cartController.getCart);
 
 router.post('/add', 
   validate(addToCartValidation), 
+  checkRole(['buyer']),
   cartController.addToCart
 );
 
 router.put('/update/:itemId', 
   validate(updateCartValidation), 
+  checkRole(['buyer']),
   cartController.updateCartItem
 );
 
 router.delete('/remove/:itemId', 
   validate(removeCartValidation),
+  checkRole(['buyer']),
   cartController.removeFromCart
 );
 
 router.delete('/clear', 
+  checkRole(['buyer']),
   cartController.clearCart
 );
 

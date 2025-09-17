@@ -37,11 +37,6 @@ const userSchema = new mongoose.Schema({
       message: 'Passwords do not match!'
     }
   },
-  role: {
-    type: String,
-    enum: ['buyer', 'seller', 'admin'],
-    default: 'buyer'
-  },
   passwordChangedAt: Date,
   passwordResetToken: String,
   passwordResetExpires: Date,
@@ -49,6 +44,32 @@ const userSchema = new mongoose.Schema({
 }, {
   timestamps: true
 });
+
+userSchema.add({
+  roles: {
+    type: [String],
+    enum: ['buyer', 'seller', 'admin'],
+    default: ['buyer']
+  },
+  activeRole: {
+    type: String,
+    enum: ['buyer', 'seller', 'admin'],
+    default: 'buyer'
+  }
+});
+
+userSchema.virtual('role')
+  .get(function () {
+    return this.activeRole;
+  })
+  .set(function (val) {
+    this.activeRole = val;
+    if (Array.isArray(this.roles)) {
+      if (!this.roles.includes(val)) this.roles.push(val);
+    } else {
+      this.roles = [val];
+    }
+  });
 
 userSchema.pre('save', async function(next) {
   if (!this.isModified('password')) return next();

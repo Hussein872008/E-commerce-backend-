@@ -4,6 +4,9 @@ const { createError } = require('../utils/errors');
 
 exports.subscribe = async (req, res, next) => {
   try {
+    if (!req.user || req.user.role !== 'buyer') {
+      return res.status(403).json({ success: false, message: 'Only buyer accounts can subscribe to notifications' });
+    }
     const userId = req.user._id;
     const { productId } = req.body;
 
@@ -26,6 +29,9 @@ exports.subscribe = async (req, res, next) => {
 
 exports.unsubscribe = async (req, res, next) => {
   try {
+    if (!req.user || req.user.role !== 'buyer') {
+      return res.status(403).json({ success: false, message: 'Only buyer accounts can unsubscribe from notifications' });
+    }
     const userId = req.user._id;
     const { productId } = req.params;
 
@@ -41,6 +47,9 @@ exports.unsubscribe = async (req, res, next) => {
 
 exports.listForUser = async (req, res, next) => {
   try {
+    if (!req.user || req.user.role !== 'buyer') {
+      return res.status(403).json({ success: false, message: 'Only buyer accounts can view subscriptions' });
+    }
     const userId = req.user._id;
     const subs = await NotificationSubscription.find({ user: userId }).populate('product', 'title _id');
     res.status(200).json({ subscriptions: subs });

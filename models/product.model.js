@@ -86,6 +86,10 @@ const productSchema = new mongoose.Schema({
     ref: "User",
     required: true
   },
+  isActive: {
+    type: Boolean,
+    default: true
+  },
   reviews: [{ type: mongoose.Schema.Types.ObjectId, ref: "Review" }],
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }

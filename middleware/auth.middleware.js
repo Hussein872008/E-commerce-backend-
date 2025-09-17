@@ -21,7 +21,7 @@ exports.verifyToken = async (req, res, next) => {
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-  const currentUser = await User.findById(decoded.id).select('_id name email role');
+  const currentUser = await User.findById(decoded.id).select('_id name email activeRole roles');
     if (!currentUser) {
       return res.status(401).json({
         success: false,
@@ -29,11 +29,13 @@ exports.verifyToken = async (req, res, next) => {
       });
     }
 
+    const mappedRole = currentUser.activeRole || (Array.isArray(currentUser.roles) && currentUser.roles.length ? currentUser.roles[0] : undefined);
+
     req.user = {
       _id: currentUser._id,
       name: currentUser.name,
       email: currentUser.email,
-      role: currentUser.role
+      role: mappedRole
     };
     res.locals.user = req.user;
 

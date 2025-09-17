@@ -5,6 +5,9 @@ const mongoose = require('mongoose');
 
 exports.addToWishlist = async (req, res) => {
   try {
+    if (!req.user || req.user.role !== 'buyer') {
+      return res.status(403).json({ success: false, message: 'Only buyer accounts can manage wishlist' });
+    }
     const { productId } = req.body;
     const userId = req.user?._id; 
 
@@ -74,6 +77,9 @@ exports.addToWishlist = async (req, res) => {
 
 exports.removeFromWishlist = async (req, res) => {
     try {
+    if (!req.user || req.user.role !== 'buyer') {
+      return res.status(403).json({ success: false, message: 'Only buyer accounts can manage wishlist' });
+    }
         const { productId } = req.params;
         const userId = req.user._id;
 

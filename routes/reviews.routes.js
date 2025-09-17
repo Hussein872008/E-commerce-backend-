@@ -3,6 +3,7 @@ const express = require("express");
 const router = express.Router();
 const reviewController = require("../controllers/review.controller");
 const { verifyToken } = require("../middleware/auth.middleware");
+const { checkRole } = require('../middleware/role.middleware');
 const jwt = require("jsonwebtoken");
 const User = require("../models/user.model");
 
@@ -32,13 +33,13 @@ const optionalVerifyToken = async (req, res, next) => {
   next();
 };
 
-router.post("/", verifyToken, reviewController.createReview);
+router.post("/", verifyToken, checkRole(['buyer']), reviewController.createReview);
 
 router.get("/product/:productId", optionalVerifyToken, reviewController.getProductReviews);
 
 router.get("/average/:productId", reviewController.getAverageRating);
 
-router.put("/:id", verifyToken, reviewController.updateReview);
+router.put("/:id", verifyToken, checkRole(['buyer']), reviewController.updateReview);
 
 router.delete("/:id", verifyToken, reviewController.deleteReview);
 

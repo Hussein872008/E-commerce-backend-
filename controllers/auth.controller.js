@@ -7,16 +7,18 @@ const { BadRequestError, UnauthorizedError } = require('../middleware/error.midd
 const { ConflictError } = require('../middleware/error.middleware');
 
 const generateAccessToken = (userPayload) => {
+  const roleToUse = userPayload.role;
   return jwt.sign(
-    { id: userPayload.id || userPayload._id, role: userPayload.role },
+    { id: userPayload.id || userPayload._id, role: roleToUse },
     process.env.JWT_SECRET,
     { expiresIn: process.env.JWT_EXPIRES_IN || '1d' }
   );
 };
 
 const generateRefreshToken = (userPayload) => {
+  const roleToUse2 = userPayload.role;
   return jwt.sign(
-    { id: userPayload.id || userPayload._id, role: userPayload.role },
+    { id: userPayload.id || userPayload._id, role: roleToUse2 },
     process.env.JWT_REFRESH_SECRET,
     { expiresIn: process.env.JWT_REFRESH_EXPIRES || '7d' }
   );
@@ -79,8 +81,9 @@ exports.login = async (req, res, next) => {
     }
 
     console.log('Password is valid, generating token...');
-    const accessToken = generateAccessToken({ id: user._id, role: user.role });
-    const refreshToken = generateRefreshToken({ id: user._id, role: user.role });
+  const mappedRole = user.activeRole || (Array.isArray(user.roles) && user.roles.length ? user.roles[0] : user.role);
+  const accessToken = generateAccessToken({ id: user._id, role: mappedRole });
+  const refreshToken = generateRefreshToken({ id: user._id, role: mappedRole });
 
     try {
       res.cookie('refreshToken', refreshToken, getRefreshCookieOptions());
@@ -156,8 +159,9 @@ exports.register = async (req, res, next) => {
 
     newUser.password = undefined;
 
-    const accessToken = generateAccessToken({ id: newUser._id, role: newUser.role });
-    const refreshToken = generateRefreshToken({ id: newUser._id, role: newUser.role });
+  const mappedRoleNew = newUser.activeRole || (Array.isArray(newUser.roles) && newUser.roles.length ? newUser.roles[0] : newUser.role);
+  const accessToken = generateAccessToken({ id: newUser._id, role: mappedRoleNew });
+  const refreshToken = generateRefreshToken({ id: newUser._id, role: mappedRoleNew });
 
     try {
       res.cookie('refreshToken', refreshToken, getRefreshCookieOptions());
@@ -321,8 +325,9 @@ exports.resetPassword = async (req, res, next) => {
     console.log('Password updated');
 
     console.log('Generating tokens...');
-    const accessToken = generateAccessToken({ id: user._id, role: user.role });
-    const refreshToken = generateRefreshToken({ id: user._id, role: user.role });
+  const mappedRole2 = user.activeRole || (Array.isArray(user.roles) && user.roles.length ? user.roles[0] : user.role);
+  const accessToken = generateAccessToken({ id: user._id, role: mappedRole2 });
+  const refreshToken = generateRefreshToken({ id: user._id, role: mappedRole2 });
     console.log('Tokens generated');
 
     try {
@@ -379,7 +384,7 @@ exports.refreshToken = async (req, res, next) => {
       }
 
       try {
-        const currentUser = await User.findById(decoded.id).select('_id name email role');
+        const currentUser = await User.findById(decoded.id).select('_id name email activeRole roles');
         if (!currentUser) {
           return res.status(401).json({
             success: false,
@@ -387,8 +392,9 @@ exports.refreshToken = async (req, res, next) => {
           });
         }
 
-        const newAccessToken = generateAccessToken({ id: currentUser._id, role: currentUser.role });
-        const newRefreshToken = generateRefreshToken({ id: currentUser._id, role: currentUser.role });
+        const mapped = currentUser.activeRole || (Array.isArray(currentUser.roles) && currentUser.roles.length ? currentUser.roles[0] : undefined);
+        const newAccessToken = generateAccessToken({ id: currentUser._id, role: mapped });
+        const newRefreshToken = generateRefreshToken({ id: currentUser._id, role: mapped });
 
         try {
           res.cookie('refreshToken', newRefreshToken, getRefreshCookieOptions());

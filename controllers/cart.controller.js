@@ -67,6 +67,9 @@ exports.getCart = async (req, res) => {
 
 exports.addToCart = async (req, res) => {
     try {
+        if (!req.user || req.user.role !== 'buyer') {
+            return res.status(403).json({ success: false, message: 'Only buyer accounts can modify the cart' });
+        }
         const { productId, quantity = 1 } = req.body;
         const userId = req.user._id;
 
@@ -159,6 +162,9 @@ exports.addToCart = async (req, res) => {
 
 exports.updateCartItem = async (req, res) => {
     try {
+        if (!req.user || req.user.role !== 'buyer') {
+            return res.status(403).json({ success: false, message: 'Only buyer accounts can modify the cart' });
+        }
         const { itemId } = req.params;
         const { quantity } = req.body;
         const userId = req.user._id;
@@ -230,6 +236,9 @@ exports.updateCartItem = async (req, res) => {
 
 exports.removeFromCart = async (req, res) => {
     try {
+        if (!req.user || req.user.role !== 'buyer') {
+            return res.status(403).json({ success: false, message: 'Only buyer accounts can modify the cart' });
+        }
         const { itemId } = req.params;
         const userId = req.user._id;
 
@@ -274,6 +283,9 @@ exports.removeFromCart = async (req, res) => {
 
 exports.clearCart = async (req, res) => {
     try {
+        if (!req.user || req.user.role !== 'buyer') {
+            return res.status(403).json({ success: false, message: 'Only buyer accounts can modify the cart' });
+        }
         const userId = req.user._id;
 
         const cart = await Cart.findOne({ user: userId });

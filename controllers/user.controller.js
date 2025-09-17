@@ -56,7 +56,8 @@ const updateUserRole = async (req, res) => {
         details: "User not found"
       });
     }
-    if (userToUpdate.role === 'admin' && req.user.role !== 'admin') {
+  const userToUpdateRole = userToUpdate.activeRole || (userToUpdate.roles && userToUpdate.roles[0]) || null;
+  if (userToUpdateRole === 'admin' && req.user.role !== 'admin') {
       console.error(`[User] Not authorized to change admin role. user: ${req.user?._id}`);
       return res.status(403).json({
         success: false,
@@ -64,7 +65,7 @@ const updateUserRole = async (req, res) => {
         details: "Cannot change admin role unless you are admin"
       });
     }
-    userToUpdate.role = role;
+  userToUpdate.role = role;
     await userToUpdate.save();
     console.log(`[User] User role updated: ${userToUpdate._id} to ${role} by ${req.user?._id}`);
     res.status(200).json({ 
@@ -91,7 +92,8 @@ const deleteUser = async (req, res) => {
         details: "User not found"
       });
     }
-    if (userToDelete.role === 'admin' && req.user.role !== 'admin') {
+  const userToDeleteRole = userToDelete.activeRole || (userToDelete.roles && userToDelete.roles[0]) || null;
+  if (userToDeleteRole === 'admin' && req.user.role !== 'admin') {
       console.error(`[User] Not authorized to delete admin. user: ${req.user?._id}`);
       return res.status(403).json({
         success: false,
@@ -217,6 +219,52 @@ const updateUserProfile = async (req, res) => {
 };
 
 
+  const switchRole = async (userId, newRole) => {
+    if (!['buyer', 'seller', 'admin'].includes(newRole)) {
+      throw new Error('Invalid role');
+    }
+
+    const user = await User.findById(userId);
+    if (!user) throw new Error('User not found');
+
+    const previous = user.activeRole || (user.roles && user.roles[0]) || null;
+
+    if (!Array.isArray(user.roles)) user.roles = [];
+    if (!user.roles.includes(newRole)) user.roles.push(newRole);
+
+    user.activeRole = newRole;
+    await user.save();
+
+    if (previous === 'seller' && newRole === 'buyer') {
+      await Product.updateMany({ seller: user._id, isActive: true }, { $set: { isActive: false } });
+    }
+
+
+    return user;
+  };
+
+  const switchRoleHandler = async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { newRole } = req.body;
+
+      if (req.user._id.toString() !== id && req.user.role !== 'admin') {
+        return res.status(403).json({ success: false, message: 'Not authorized to switch role for this user' });
+      }
+
+      if (newRole === 'admin' && req.user.role !== 'admin') {
+        return res.status(403).json({ success: false, message: 'Cannot promote to admin' });
+      }
+
+      const updatedUser = await switchRole(id, newRole);
+      updatedUser.password = undefined;
+      res.status(200).json({ success: true, message: 'Role switched successfully', user: updatedUser });
+    } catch (err) {
+      console.error('switchRole error:', err);
+      res.status(400).json({ success: false, message: err.message || 'Failed to switch role' });
+    }
+  };
+
 module.exports = {
   getAllUsers,
   updateUserRole,
@@ -224,4 +272,6 @@ module.exports = {
   deleteUser,
   deleteSelf,
   getAdminStats
+    , switchRole,
+    switchRoleHandler
 };

@@ -10,6 +10,7 @@ router.get("/stats", verifyToken, restrictTo('admin'), userController.getAdminSt
 
 router.delete("/:id", verifyToken, restrictTo('admin'), userController.deleteUser);
 router.put("/:id/role", verifyToken, restrictTo('admin'), userController.updateUserRole);
+router.put("/:id/switch-role", verifyToken, userController.switchRoleHandler);
 router.patch(
   "/:id",
   verifyToken,
