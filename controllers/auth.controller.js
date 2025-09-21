@@ -103,7 +103,7 @@ exports.login = async (req, res, next) => {
         id: user._id,
         name: user.name,
         email: user.email,
-        role: user.role
+        role: mappedRole
       }
     });
   } catch (err) {
@@ -119,7 +119,8 @@ exports.login = async (req, res, next) => {
 
 exports.register = async (req, res, next) => {
   try {
-    const { name, email, password, passwordConfirm, role } = req.body;
+    let { name, email, password, passwordConfirm, role } = req.body;
+    if (typeof email === 'string') email = email.trim().toLowerCase();
 
     if (!name || !email || !password || !passwordConfirm) {
       console.error(`[Auth] Missing registration data. email: ${email}`);
@@ -180,7 +181,7 @@ exports.register = async (req, res, next) => {
         id: newUser._id,
         name: newUser.name,
         email: newUser.email,
-        role: newUser.role
+        role: mappedRoleNew
       }
     });
   } catch (err) {
@@ -221,8 +222,9 @@ exports.forgotPassword = async (req, res) => {
   console.log('--- forgotPassword called ---');
 
   try {
-    const { email } = req.body;
-    console.log('Received email:', email);
+    let { email } = req.body || {};
+    if (typeof email === 'string') email = email.trim().toLowerCase();
+    console.log('Received email for reset:', email);
 
     const user = await User.findOne({ email });
     console.log('User found:', !!user);
@@ -240,15 +242,18 @@ exports.forgotPassword = async (req, res) => {
     await user.save({ validateBeforeSave: false });
     console.log('Reset token saved:', resetToken);
 
-    if (!process.env.FRONTEND_URL) {
-      console.error('FRONTEND_URL not defined');
+    // Provide a safe fallback for FRONTEND_URL in non-production to help development/testing
+    const frontendBase = process.env.FRONTEND_URL || (process.env.NODE_ENV !== 'production' ? `http://${req.headers.host || 'localhost:5173'}` : null);
+    if (!frontendBase) {
+      console.error('FRONTEND_URL not defined and no safe fallback available');
       return res.status(500).json({
         success: false,
         message: 'Server configuration error: FRONTEND_URL not set',
       });
     }
 
-    const resetURL = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
+    const resetURL = `${frontendBase.replace(/\/$/, '')}/reset-password/${resetToken}`;
+    console.log('Password reset URL (can be used to test in dev):', resetURL);
     const message = `You requested a password reset. Click the link below to reset your password:\n\n${resetURL}\n\nThis link will expire in 10 minutes.`;
 
     console.log('Sending email...');
@@ -257,23 +262,26 @@ exports.forgotPassword = async (req, res) => {
         sendEmail(user.email, 'Your password reset link (valid for 10 minutes)', message),
         new Promise((_, reject) => setTimeout(() => reject(new Error('Email send timeout')), 10000))
       ]);
-      console.log('Email sent successfully');
+      console.log('Email send attempt completed (may be fake in dev).');
     } catch (emailErr) {
-      console.error('Failed to send email:', emailErr.message);
+      console.error('Failed to send email:', emailErr && emailErr.message ? emailErr.message : emailErr);
       user.passwordResetToken = undefined;
       user.passwordResetExpires = undefined;
       await user.save({ validateBeforeSave: false });
       return res.status(500).json({
         success: false,
         message: 'Failed to send password reset email',
-        error: emailErr.message
+        error: emailErr && emailErr.message ? emailErr.message : String(emailErr)
       });
     }
 
-    res.status(200).json({
-      success: true,
-      message: 'Password reset link sent to your email.'
-    });
+    // In development, return the resetURL to make testing easier. In production we keep the generic message.
+    const baseResponse = { success: true, message: 'Password reset link sent to your email.' };
+    if (process.env.NODE_ENV !== 'production') {
+      baseResponse.resetURL = resetURL;
+    }
+
+    res.status(200).json(baseResponse);
 
   } catch (err) {
     console.error('forgotPassword error:', err);
@@ -347,7 +355,7 @@ exports.resetPassword = async (req, res, next) => {
         id: user._id,
         name: user.name,
         email: user.email,
-        role: user.role
+        role: mappedRole2
       }
     });
     console.log('Response sent: Password reset successful');

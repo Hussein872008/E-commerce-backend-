@@ -57,7 +57,8 @@ const errorHandler = (err, req, res, next) => {
     success: false,
     status: err.status,
     message: err.message,
-    stack: err.stack
+    // Expose stack only in non-production for debugging
+    ...(process.env.NODE_ENV !== 'production' ? { stack: err.stack } : {})
   });
 };
 

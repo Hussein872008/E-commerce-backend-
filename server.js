@@ -120,7 +120,6 @@ io.on('connection', (socket) => {
 global.io = io;
 global.connectedUsers = connectedUsers;
 
-connectDB();
 
 const allowedOrigins = [
   "https://ecommerce-hussein.vercel.app",
@@ -174,6 +173,8 @@ const sanitizeObject = (obj) => {
 app.use((req, res, next) => {
   try {
     sanitizeObject(req.body);
+    // Sanitize query parameters to avoid NoSQL injection via query strings
+    sanitizeObject(req.query);
     sanitizeObject(req.params);
   } catch (e) {
     logger.warn('Sanitizer middleware failed', e.message);
