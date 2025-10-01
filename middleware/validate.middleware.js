@@ -23,20 +23,18 @@ const { validationResult } = require('express-validator');
 
 const validate = (validations) => {
   return async (req, res, next) => {
-    try {
-      console.log('Validation middleware - Request body:', req.body);
-      
-      for (const validation of validations) {
-        await validation.run(req);
-      }
+      try {
+        console.debug && console.debug('Validation middleware - running validations');
+        for (const validation of validations) {
+          await validation.run(req);
+        }
 
       const errors = validationResult(req);
       if (errors.isEmpty()) {
-        console.log('Validation passed');
+        console.debug && console.debug('Validation passed');
         return next();
       }
-
-      console.log('Validation errors:', errors.array());
+        logger && logger.info && logger.info('Validation errors', { errors: errors.array() });
       return res.status(400).json({ 
         success: false,
         errors: errors.array() 

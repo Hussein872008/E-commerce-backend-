@@ -6,7 +6,9 @@ const fsp = require("fs").promises;
 const path = require("path");
 const Review = require('../models/review.model');
 const asyncHandler = require("express-async-handler");
+const crypto = require('crypto');
 const { deleteFromCloudinary } = require("../utils/cloudinary");
+const { sendSuccess, sendError } = require('../utils/response');
 
 function ensureUploadsDir() {
   const dir = path.join(__dirname, '../uploads');
@@ -21,17 +23,11 @@ exports.createProduct = async (req, res) => {
     const missingFields = requiredFields.filter((field) => !req.body[field]);
 
     if (missingFields.length > 0) {
-      return res.status(400).json({
-        success: false,
-        error: `Missing required fields: ${missingFields.join(", ")}`,
-      });
+      return sendError(res, `Missing required fields: ${missingFields.join(", ")}`, 400, { error: `Missing required fields: ${missingFields.join(", ")}` });
     }
 
     if (!req.files?.image?.[0]) {
-      return res.status(400).json({
-        success: false,
-        error: "Main product image is required",
-      });
+      return sendError(res, "Main product image is required", 400, { error: "Main product image is required" });
     }
 
     const imageUrl = req.files.image[0].path;
@@ -105,18 +101,10 @@ exports.createProduct = async (req, res) => {
     const product = new Product(productData);
     await product.save();
 
-    return res.status(201).json({
-      success: true,
-      message: "Product created successfully",
-      data: product,
-    });
+    return sendSuccess(res, { message: "Product created successfully", data: product }, 201);
   } catch (err) {
     console.error("Create product error:", err);
-    return res.status(500).json({
-      success: false,
-      error: "Failed to create product",
-      message: err.message,
-    });
+    return sendError(res, "Failed to create product", 500, { error: "Failed to create product", message: err.message });
   }
 };
 
@@ -124,23 +112,75 @@ exports.createProduct = async (req, res) => {
 exports.updateProduct = async (req, res) => {
   try {
     const { id } = req.params;
-    const product = await Product.findById(id);
-    if (!product) return res.status(404).json({ error: "Product not found" });
+  const product = await Product.findById(id);
+  if (!product) return sendError(res, "Product not found", 404, { error: "Product not found" });
 
     if (
       product.seller.toString() !== req.user._id.toString() &&
       req.user.role !== "admin"
     ) {
-      return res.status(403).json({ error: "Not authorized" });
+      return sendError(res, "Not authorized", 403, { error: "Not authorized" });
     }
 
-    const { title, description, price, quantity, category } = req.body;
+    const {
+      title,
+      description,
+      price,
+      quantity,
+      category,
+      discountPercentage,
+      minimumOrderQuantity,
+      weight,
+      dimensions
+    } = req.body;
+
   const prevQuantity = product.quantity;
+
   if (title) product.title = title;
   if (description) product.description = description;
-  if (price) product.price = price;
-  if (typeof quantity !== 'undefined') product.quantity = quantity;
-    if (category) product.category = category;
+
+  if (typeof price !== 'undefined') {
+    if (price === '') {
+      return sendError(res, 'Invalid price', 400, { error: 'Invalid price' });
+    }
+    const parsedPrice = parseFloat(price);
+    if (Number.isNaN(parsedPrice)) {
+      return sendError(res, 'Invalid price', 400, { error: 'Invalid price' });
+    }
+    product.price = parsedPrice;
+  }
+
+  if (typeof discountPercentage !== 'undefined' && discountPercentage !== '') {
+    const dp = parseFloat(discountPercentage);
+    if (Number.isNaN(dp)) return sendError(res, 'Invalid discountPercentage', 400, { error: 'Invalid discountPercentage' });
+    product.discountPercentage = dp;
+  }
+
+  if (typeof quantity !== 'undefined') {
+    const q = parseInt(quantity, 10);
+    if (Number.isNaN(q)) return sendError(res, 'Invalid quantity', 400, { error: 'Invalid quantity' });
+    product.quantity = q;
+  }
+
+  if (typeof minimumOrderQuantity !== 'undefined') {
+    const minQ = parseInt(minimumOrderQuantity, 10);
+    if (Number.isNaN(minQ)) return sendError(res, 'Invalid minimumOrderQuantity', 400, { error: 'Invalid minimumOrderQuantity' });
+    product.minimumOrderQuantity = minQ;
+  }
+
+  if (typeof weight !== 'undefined' && weight !== '') {
+    const w = parseFloat(weight);
+    if (!Number.isNaN(w)) product.weight = w;
+  }
+
+  if (typeof dimensions !== 'undefined' && dimensions) {
+    try {
+      product.dimensions = JSON.parse(dimensions);
+    } catch (e) {
+    }
+  }
+
+  if (category) product.category = category;
 
     if (req.files?.image?.[0]) {
       product.image = req.files.image[0].path;
@@ -160,18 +200,10 @@ exports.updateProduct = async (req, res) => {
     } catch (e) {
       console.error('Error running stockChecker after product update:', e);
     }
-    res.json({
-      success: true,
-      message: "Product updated successfully.",
-      product,
-    });
+    return sendSuccess(res, { message: "Product updated successfully.", product });
   } catch (err) {
     console.error(`[Product] Error updating product: ${req.params.id}`, err);
-    res.status(500).json({
-      success: false,
-      error: "Error updating product.",
-      details: err.message,
-    });
+    return sendError(res, "Error updating product.", 500, { error: "Error updating product.", details: err.message });
   }
 };
 
@@ -182,31 +214,29 @@ exports.deleteProduct = async (req, res) => {
     const { id } = req.params;
     const product = await Product.findById(id);
     if (!product) {
-      return res.status(404).json({ error: "Product not found" });
+      return sendError(res, "Product not found", 404, { error: "Product not found" });
     }
 
     if (
       product.seller.toString() !== req.user._id.toString() &&
       req.user.role !== "admin"
     ) {
-      return res.status(403).json({ error: "Not authorized" });
+      return sendError(res, "Not authorized", 403, { error: "Not authorized" });
     }
 
     if (product.image) {
       await deleteFromCloudinary(product.image);
     }
     if (product.extraImages?.length > 0) {
-      for (const img of product.extraImages) {
-        await deleteFromCloudinary(img);
-      }
+      await Promise.allSettled(product.extraImages.map(img => deleteFromCloudinary(img)));
     }
 
-    await Product.findByIdAndDelete(id);
+  await Product.findByIdAndDelete(id);
 
-    res.json({ success: true, message: "Product deleted successfully" });
+  return sendSuccess(res, { message: "Product deleted successfully" });
   } catch (err) {
     console.error("Error in deleteProduct:", err.message);
-    res.status(500).json({ error: "Failed to delete product", details: err.message });
+    return sendError(res, "Failed to delete product", 500, { error: "Failed to delete product", details: err.message });
   }
 };
 
@@ -219,14 +249,14 @@ exports.deleteProductImage = async (req, res) => {
 
     const product = await Product.findById(id);
     if (!product) {
-      return res.status(404).json({ error: "Product not found" });
+      return sendError(res, "Product not found", 404, { error: "Product not found" });
     }
 
     if (
       product.seller.toString() !== req.user._id.toString() &&
       req.user.role !== "admin"
     ) {
-      return res.status(403).json({ error: "Not authorized" });
+      return sendError(res, "Not authorized", 403, { error: "Not authorized" });
     }
 
     let toDeleteUrl = null;
@@ -254,34 +284,97 @@ exports.deleteProductImage = async (req, res) => {
     });
     await product.save();
 
-    res.json({
-      success: true,
-      message: "Image deleted successfully",
-      product,
-    });
+    return sendSuccess(res, { message: "Image deleted successfully", product });
   } catch (err) {
     console.error("Error deleting image:", err);
-    res.status(500).json({
-      success: false,
-      error: "Failed to delete image",
-      details: err.message,
-    });
+    return sendError(res, "Failed to delete image", 500, { error: "Failed to delete image", details: err.message });
   }
 };
 
 
 exports.getAllProducts = async (req, res) => {
   try {
-    let products = await Product.find()
-      .populate("seller", "name email _id")
-      .sort("-createdAt")
-      .lean();
+    const page = Math.max(1, parseInt(req.query.page || '1', 10));
+    const limit = Math.max(1, Math.min(parseInt(req.query.limit || '12', 10), 200));
+    const sort = req.query.sort || '-createdAt';
+    const fieldsRaw = req.query.fields ? String(req.query.fields) : null;
+    const projection = fieldsRaw ? fieldsRaw.split(',').map(f => f.trim()).filter(Boolean).join(' ') : null;
+
+    const explicitAll = String(req.query.all || 'false') === 'true';
+    const MAX_ALL_LIMIT = 1000;
+
+    let query = Product.find();
+    if (projection) query = query.select(projection);
+    query = query.populate('seller', 'name email _id').sort(sort);
+
+    if (explicitAll) {
+      const effectiveLimit = Math.min(parseInt(req.query.limit || String(MAX_ALL_LIMIT), 10), MAX_ALL_LIMIT);
+      query = query.limit(effectiveLimit);
+      query = query.lean();
+      const products = await query.exec();
+
+      const productIds = products.map(p => p._id);
+      let ratings = [];
+      if (productIds.length > 0) {
+        ratings = await Review.aggregate([
+          { $match: { product: { $in: productIds } } },
+          { $group: { _id: "$product", averageRating: { $avg: "$rating" }, reviewsCount: { $sum: 1 } } }
+        ]);
+      }
+      const ratingsMap = {};
+      ratings.forEach(r => {
+        ratingsMap[r._id.toString()] = {
+          averageRating: r.averageRating ? parseFloat(r.averageRating.toFixed(1)) : 0,
+          reviewsCount: r.reviewsCount || 0
+        };
+      });
+      const productsWithRatings = products.map(p => ({
+        ...p,
+        averageRating: ratingsMap[p._id.toString()]?.averageRating || 0,
+        reviewsCount: ratingsMap[p._id.toString()]?.reviewsCount || 0
+      }));
+
+      try {
+        const latestUpdated = productsWithRatings.reduce((mx, p) => {
+          const t = p && p.updatedAt ? new Date(p.updatedAt).getTime() : 0;
+          return Math.max(mx, t);
+        }, 0);
+        const etagRaw = `${latestUpdated}:${productsWithRatings.length}`;
+        const etag = `W/"${crypto.createHash('md5').update(String(etagRaw)).digest('hex')}"`;
+        const lastModified = latestUpdated ? new Date(latestUpdated).toUTCString() : new Date().toUTCString();
+        const maxAge = 30;
+
+        if (req.headers['if-none-match'] === etag || (req.headers['if-modified-since'] && new Date(req.headers['if-modified-since']).getTime() === latestUpdated)) {
+          res.status(304).end();
+          return;
+        }
+
+        res.set('Cache-Control', `public, max-age=${maxAge}`);
+        res.set('ETag', etag);
+        res.set('Last-Modified', lastModified);
+      } catch (e) {
+        console.warn('Failed to compute product list cache headers:', e && e.message);
+      }
+
+      return sendSuccess(res, { count: productsWithRatings.length, products: productsWithRatings });
+    }
+
+    const skip = (page - 1) * limit;
+    query = query.skip(skip).limit(limit).lean();
+
+    const [products, total] = await Promise.all([
+      query.exec(),
+      Product.countDocuments()
+    ]);
 
     const productIds = products.map(p => p._id);
-    const ratings = await Review.aggregate([
-      { $match: { product: { $in: productIds } } },
-      { $group: { _id: "$product", averageRating: { $avg: "$rating" }, reviewsCount: { $sum: 1 } } }
-    ]);
+    let ratings = [];
+    if (productIds.length > 0) {
+      ratings = await Review.aggregate([
+        { $match: { product: { $in: productIds } } },
+        { $group: { _id: "$product", averageRating: { $avg: "$rating" }, reviewsCount: { $sum: 1 } } }
+      ]);
+    }
     const ratingsMap = {};
     ratings.forEach(r => {
       ratingsMap[r._id.toString()] = {
@@ -289,26 +382,41 @@ exports.getAllProducts = async (req, res) => {
         reviewsCount: r.reviewsCount || 0
       };
     });
-    products = products.map(p => ({
+    const productsWithRatings = products.map(p => ({
       ...p,
       averageRating: ratingsMap[p._id.toString()]?.averageRating || 0,
       reviewsCount: ratingsMap[p._id.toString()]?.reviewsCount || 0
     }));
 
-    res.status(200).json({
-      success: true,
-      count: products.length,
-      data: products
-    });
+      try {
+      const latestUpdated = productsWithRatings.reduce((mx, p) => {
+        const t = p && p.updatedAt ? new Date(p.updatedAt).getTime() : 0;
+        return Math.max(mx, t);
+      }, 0);
+      const etagRaw = `${latestUpdated}:${productsWithRatings.length}:${page}:${limit}`;
+      const etag = `W/"${crypto.createHash('md5').update(String(etagRaw)).digest('hex')}"`;
+      const lastModified = latestUpdated ? new Date(latestUpdated).toUTCString() : new Date().toUTCString();
+      const maxAge = 15; 
+
+      if (req.headers['if-none-match'] === etag || (req.headers['if-modified-since'] && new Date(req.headers['if-modified-since']).getTime() === latestUpdated)) {
+        res.status(304).end();
+        return;
+      }
+
+      res.set('Cache-Control', `public, max-age=${maxAge}`);
+      res.set('ETag', etag);
+      res.set('Last-Modified', lastModified);
+    } catch (e) {
+      console.warn('Failed to compute paginated product list cache headers:', e && e.message);
+    }
+
+    return sendSuccess(res, { count: productsWithRatings.length, total, page, pages: Math.ceil(total / limit), products: productsWithRatings });
   } catch (error) {
     console.error("Error in getAllProducts:", error);
-    res.status(500).json({
-      success: false,
-      error: "Failed to fetch products",
-      message: error.message
-    });
+    return sendError(res, "Failed to fetch products", 500, { error: "Failed to fetch products", details: error && error.message });
   }
 };
+
 
 exports.getFilteredProducts = asyncHandler(async (req, res) => {
   const {
@@ -324,6 +432,15 @@ exports.getFilteredProducts = asyncHandler(async (req, res) => {
   } = req.query;
 
   const filter = {};
+  const fieldsRaw = req.query.fields ? String(req.query.fields) : null;
+  const projection = fieldsRaw ? fieldsRaw.split(',').map(f => f.trim()).filter(Boolean).join(' ') : null;
+  const hasLimit = typeof req.query.limit !== 'undefined';
+  const hasPage = typeof req.query.page !== 'undefined';
+
+  const explicitAll = String(req.query.all || 'false') === 'true';
+  const hasFilters = Boolean(search) || Boolean(req.query.tags) || Boolean(req.query.brand) || Boolean(minPrice) || Boolean(maxPrice) || Boolean(req.query.availability) || Boolean(minRating) || Boolean(exclude) || Boolean(category);
+  const wantAll = explicitAll || hasFilters;
+  const MAX_ALL_LIMIT = 1000;
 
   if (category && typeof category === 'string') {
     filter.category = category;
@@ -358,67 +475,132 @@ exports.getFilteredProducts = asyncHandler(async (req, res) => {
     filter._id.$in = ratedProducts.map(p => p._id);
   }
 
-  if (search && typeof search === 'string') {
-    filter.$or = [
-      { title: { $regex: search, $options: 'i' } },
-      { description: { $regex: search, $options: 'i' } }
-    ];
+  const usePlainSearch = search && typeof search === 'string' && search.trim().length > 0;
+
+  if (req.query.tags) {
+    const tags = String(req.query.tags).split(',').map(t => t.trim()).filter(Boolean);
+    if (tags.length > 0) {
+      filter.tags = { $in: tags };
+    }
+  }
+
+  if (req.query.brand) {
+    const brand = String(req.query.brand).trim();
+    if (brand) filter.brand = brand;
+  }
+
+  if (req.query.availability) {
+    const av = String(req.query.availability);
+    if (av === 'inStock') filter.quantity = { $gt: 5 };
+    else if (av === 'lowStock') filter.quantity = { $gt: 0, $lte: 5 };
+    else if (av === 'outOfStock') filter.quantity = 0;
   }
 
   const skip = (Math.max(1, parseInt(page)) - 1) * Math.max(1, parseInt(limit));
 
+  function escapeRegex(str) {
+    return String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
   try {
+    if (usePlainSearch) {
+      const s = escapeRegex(search.trim());
+      filter.$or = [
+        { title: { $regex: s, $options: 'i' } },
+        { description: { $regex: s, $options: 'i' } },
+        { sku: { $regex: s, $options: 'i' } },
+        { brand: { $regex: s, $options: 'i' } }
+      ];
+    }
+
+    let productsQuery = Product.find(filter).populate("seller", "name email _id");
+    if (projection) productsQuery = productsQuery.select(projection);
+
+    productsQuery = productsQuery.sort(sort);
+
+    if (wantAll && !hasPage && !hasLimit && !explicitAll) {
+      productsQuery = productsQuery.limit(MAX_ALL_LIMIT);
+    } else {
+      productsQuery = productsQuery.skip(skip).limit(Math.max(1, parseInt(limit)));
+    }
+
+    productsQuery = productsQuery.lean();
+
     const [products, total] = await Promise.all([
-      Product.find(filter)
-        .populate("seller", "name email _id")
-        .sort(sort)
-        .skip(skip)
-        .limit(Math.max(1, parseInt(limit)))
-        .lean(),
+      productsQuery,
       Product.countDocuments(filter)
     ]);
 
-    const productIds = products.map(p => p._id);
-    const ratings = await Review.aggregate([
-      { $match: { product: { $in: productIds } } },
-      { $group: { _id: "$product", averageRating: { $avg: "$rating" }, reviewsCount: { $sum: 1 } } }
-    ]);
-    const ratingsMap = {};
-    ratings.forEach(r => {
-      ratingsMap[r._id.toString()] = {
-        averageRating: r.averageRating ? parseFloat(r.averageRating.toFixed(1)) : 0,
-        reviewsCount: r.reviewsCount || 0
-      };
-    });
-    const productsWithRatings = products.map(p => ({
-      ...p,
-      averageRating: ratingsMap[p._id.toString()]?.averageRating || 0,
-      reviewsCount: ratingsMap[p._id.toString()]?.reviewsCount || 0
-    }));
+    const needRatings = !fieldsRaw || fieldsRaw.includes('averageRating') || fieldsRaw.includes('reviewsCount') || minRating;
+    let productsWithRatings = products;
+    if (needRatings) {
+      const productIds = products.map(p => p._id);
+      let ratings = [];
+      if (productIds.length > 0) {
+        ratings = await Review.aggregate([
+          { $match: { product: { $in: productIds } } },
+          { $group: { _id: "$product", averageRating: { $avg: "$rating" }, reviewsCount: { $sum: 1 } } }
+        ]);
+      }
+      const ratingsMap = {};
+      ratings.forEach(r => {
+        ratingsMap[r._id.toString()] = {
+          averageRating: r.averageRating ? parseFloat(r.averageRating.toFixed(1)) : 0,
+          reviewsCount: r.reviewsCount || 0
+        };
+      });
+      productsWithRatings = products.map(p => ({
+        ...p,
+        averageRating: ratingsMap[p._id.toString()]?.averageRating || 0,
+        reviewsCount: ratingsMap[p._id.toString()]?.reviewsCount || 0
+      }));
+    }
 
-    res.status(200).json({
-      success: true,
-      count: productsWithRatings.length,
-      total,
-      page: parseInt(page),
-      pages: Math.ceil(total / limit),
-      products: productsWithRatings
-    });
+    if (wantAll) {
+      return sendSuccess(res, { count: productsWithRatings.length, total, products: productsWithRatings });
+    }
+
+    return sendSuccess(res, { count: productsWithRatings.length, total, page: parseInt(page), pages: Math.ceil(total / limit), products: productsWithRatings });
 
   } catch (err) {
     console.error("Error in getFilteredProducts:", err);
-    res.status(500).json({
-      success: false,
-      error: "Failed to fetch filtered products",
-      message: err.message
-    });
+    return sendError(res, "Failed to fetch filtered products", 500, { error: "Failed to fetch filtered products", message: err.message });
   }
 });
 
 
 exports.getProductById = async (req, res) => {
   try {
-    const product = await Product.findById(req.params.id)
+    const fieldsRaw = req.query.fields ? String(req.query.fields) : null;
+    const projection = fieldsRaw ? fieldsRaw.split(',').map(f => f.trim()).filter(Boolean).join(' ') : null;
+
+    let productQuery = Product.findById(req.params.id);
+    if (projection) {
+      productQuery = productQuery.select(projection);
+      if (!projection.includes('seller')) productQuery = productQuery.populate('seller', 'name _id');
+      const product = await productQuery.lean();
+      if (!product) return sendError(res, "Product not found", 404, { error: "Product not found" });
+      try {
+        const latestUpdated = product.updatedAt ? new Date(product.updatedAt).getTime() : Date.now();
+        const etag = `W/"${crypto.createHash('md5').update(String(product._id) + ':' + String(latestUpdated)).digest('hex')}"`;
+        const lastModified = new Date(latestUpdated).toUTCString();
+        const maxAge = 60; 
+        if (req.headers['if-none-match'] === etag || (req.headers['if-modified-since'] && new Date(req.headers['if-modified-since']).getTime() === latestUpdated)) {
+          res.status(304).end();
+          return;
+        }
+
+        res.set('Cache-Control', `public, max-age=${maxAge}`);
+        res.set('ETag', etag);
+        res.set('Last-Modified', lastModified);
+      } catch (e) {
+        console.warn('Failed to compute product cache headers:', e && e.message);
+      }
+
+      return sendSuccess(res, { product });
+    }
+
+    const product = await productQuery
       .populate("seller", "name email _id")
       .populate({
         path: "reviews",
@@ -428,10 +610,28 @@ exports.getProductById = async (req, res) => {
         }
       });
 
-    if (!product) return res.status(404).json({ error: "Product not found" });
-    res.json(product);
+    if (!product) return sendError(res, "Product not found", 404, { error: "Product not found" });
+    try {
+      const latestUpdated = product.updatedAt ? new Date(product.updatedAt).getTime() : Date.now();
+      const etag = `W/"${crypto.createHash('md5').update(String(product._id) + ':' + String(latestUpdated)).digest('hex')}"`;
+      const lastModified = new Date(latestUpdated).toUTCString();
+      const maxAge = 60;
+
+      if (req.headers['if-none-match'] === etag || (req.headers['if-modified-since'] && new Date(req.headers['if-modified-since']).getTime() === latestUpdated)) {
+        res.status(304).end();
+        return;
+      }
+
+      res.set('Cache-Control', `public, max-age=${maxAge}`);
+      res.set('ETag', etag);
+      res.set('Last-Modified', lastModified);
+    } catch (e) {
+      console.warn('Failed to compute product cache headers:', e && e.message);
+    }
+
+    return sendSuccess(res, { product });
   } catch (err) {
-    res.status(500).json({ error: "Failed to fetch product", details: err.message });
+    return sendError(res, "Failed to fetch product", 500, { error: "Failed to fetch product", details: err.message });
   }
 };
 
@@ -500,28 +700,26 @@ exports.getSellerProducts = async (req, res) => {
 
     const total = await Product.countDocuments(query);
 
-    res.json({
-      products,
-      total,
-      page: pageNum,
-      pages: Math.ceil(total / lim)
-    });
+    return sendSuccess(res, { products, total, page: pageNum, pages: Math.ceil(total / lim) });
   } catch (err) {
-    res.status(500).json({
-      error: "Failed to fetch seller products",
-      details: err.message
-    });
+    return sendError(res, "Failed to fetch seller products", 500, { error: "Failed to fetch seller products", details: err.message });
   }
 };
 
 exports.getSellerDashboardStats = async (req, res) => {
   try {
     const sellerId = req.user._id;
+  const cacheKey = `sellerDashboard:${sellerId}`;
+  const cacheTtl = 30000; 
+  const cacheUtil = require('../utils/cache');
+  const cached = await cacheUtil.get(cacheKey);
+  if (cached) return sendSuccess(res, cached);
 
     const products = await Product.find({ seller: sellerId }).sort("-createdAt");
     const productsCount = products.length;
 
     const productIds = products.map(p => p._id);
+    const productIdSet = new Set(productIds.map(p => p.toString()));
 
     const recentOrders = await Order.find({ "items.product": { $in: productIds } })
       .sort("-createdAt")
@@ -529,56 +727,60 @@ exports.getSellerDashboardStats = async (req, res) => {
 
     const ordersCount = await Order.countDocuments({ "items.product": { $in: productIds } });
 
-    const allOrders = await Order.find({ "items.product": { $in: productIds } });
-
-    let totalSales = 0;
-    const productSalesMap = {};
-
-    for (const order of allOrders) {
-      for (const item of order.items) {
-        if (productIds.map(p => p.toString()).includes(item.product.toString())) {
-          totalSales += item.quantity * item.price;
-
-          const prodId = item.product.toString();
-          if (!productSalesMap[prodId]) {
-            productSalesMap[prodId] = 0;
+          const salesAgg = await Order.aggregate([
+        { $unwind: "$items" },
+        { $lookup: {
+            from: "products",
+            localField: "items.product",
+            foreignField: "_id",
+            as: "product"
           }
-          productSalesMap[prodId] += item.quantity;
-        }
+        },
+        { $unwind: "$product" },
+          { $match: { "items.product": { $in: productIds }, status: "Delivered" } },
+        { $group: { _id: "$items.product", qty: { $sum: "$items.quantity" }, revenue: { $sum: { $multiply: ["$items.quantity", "$product.price"] } } } },
+        { $sort: { qty: -1 } },
+        { $limit: 5 }
+      ]);
+
+      const totalAgg = await Order.aggregate([
+        { $unwind: "$items" },
+        { $match: { "items.product": { $in: productIds }, status: "Delivered" } },
+        { $group: { _id: null, totalSales: { $sum: { $multiply: ["$items.quantity", "$items.price"] } } } }
+      ]);
+
+      const totalSales = (totalAgg && totalAgg[0] && totalAgg[0].totalSales) ? totalAgg[0].totalSales : 0;
+
+      const productSalesMap = {};
+      for (const s of salesAgg) {
+        productSalesMap[String(s._id)] = s.qty;
       }
-    }
 
-    const sortedProductIds = Object.entries(productSalesMap)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 5)
-      .map(([productId]) => productId);
-
-    const popularProducts = await Product.find({ _id: { $in: sortedProductIds } });
+      const sortedProductIds = Object.keys(productSalesMap).slice(0, 5);
+      const popularProducts = await Product.find({ _id: { $in: sortedProductIds } });
 
     const stockAlerts = products.filter(p => p.quantity <= 5);
 
-    res.json({
-      productsCount,
-      ordersCount,
-      totalSales,
-      recentOrders,
-      popularProducts,
-      stockAlerts,
-    });
+    const result = { productsCount, ordersCount, totalSales, recentOrders, popularProducts, stockAlerts };
+  await cacheUtil.set(cacheKey, result, cacheTtl);
+    return sendSuccess(res, result);
   } catch (error) {
     console.error("Error in getSellerDashboardStats:", error);
-    res.status(500).json({ message: "Error loading seller statistics" });
+    return sendError(res, "Error loading seller statistics", 500, { error: "Error loading seller statistics" });
   }
 };
 exports.getSellerSalesData = async (req, res) => {
   try {
     const sellerId = req.user._id;
+  const cacheUtil = require('../utils/cache');
+  const cacheKey = `sellerSales:${sellerId}`;
+  const cached = await cacheUtil.get(cacheKey);
+  if (cached) return sendSuccess(res, { ordersSales: cached });
 
     const products = await Product.find({ seller: sellerId });
     const productIds = products.map(p => p._id.toString());
 
     const orders = await Order.find({ "items.product": { $in: productIds } });
-
 
     const ordersSales = [];
     for (const order of orders) {
@@ -593,22 +795,25 @@ exports.getSellerSalesData = async (req, res) => {
       }
     }
 
-
-    res.json(ordersSales);
+  await cacheUtil.set(cacheKey, ordersSales, 30000);
+    return sendSuccess(res, { ordersSales });
   } catch (err) {
     console.error("Error in getSellerSalesData:", err);
-    res.status(500).json({ message: "Error loading sales data" });
+    return sendError(res, "Error loading sales data", 500, { error: "Error loading sales data" });
   }
 };
 exports.getPopularSellerProducts = async (req, res) => {
   try {
     const sellerId = req.user._id;
+  const cacheUtil = require('../utils/cache');
+  const cacheKey = `popularProducts:${sellerId}`;
+  const cached = await cacheUtil.get(cacheKey);
+  if (cached) return sendSuccess(res, { popularProducts: cached });
 
     const products = await Product.find({ seller: sellerId });
     const productIds = products.map(p => p._id.toString());
 
     const orders = await Order.find({ "items.product": { $in: productIds } });
-
 
     const productSales = {};
 
@@ -628,40 +833,43 @@ exports.getPopularSellerProducts = async (req, res) => {
       .map(([productId]) => productId);
 
     const popularProducts = await Product.find({ _id: { $in: sortedProducts } });
-
-
-    res.json(popularProducts);
+  await cacheUtil.set(cacheKey, popularProducts, 30000);
+  return sendSuccess(res, { popularProducts });
   } catch (err) {
     console.error("Error in getPopularSellerProducts:", err);
-    res.status(500).json({ message: "Error loading popular products" });
+    return sendError(res, "Error loading popular products", 500, { error: "Error loading popular products" });
   }
 };
 
 exports.getProductStatsBySeller = async (req, res) => {
   try {
-    const products = await Product.find({ seller: req.user._id });
+    const sellerId = req.user._id;
+  const cacheUtil = require('../utils/cache');
+  const cacheKey = `productStats:${sellerId}`;
+  const cached = await cacheUtil.get(cacheKey);
+  if (cached) return sendSuccess(res, cached);
+
+    const products = await Product.find({ seller: sellerId });
 
     const productsCount = products.length;
     const totalStock = products.reduce((sum, p) => sum + (p.quantity || 0), 0);
     const totalValue = products.reduce((sum, p) => sum + (p.quantity * p.price), 0);
 
-    res.json({
-      productsCount,
-      totalStock,
-      totalValue,
-    });
+    const result = { productsCount, totalStock, totalValue };
+  await cacheUtil.set(cacheKey, result, 30000);
+  return sendSuccess(res, result);
   } catch (err) {
-    res.status(500).json({ error: "Failed to fetch stats", details: err.message });
+    return sendError(res, "Failed to fetch stats", 500, { error: "Failed to fetch stats", details: err.message });
   }
 };
 
 exports.getCategories = async (req, res) => {
   try {
     const categories = await Product.distinct("category");
-    res.json(Array.isArray(categories) ? categories : []);
+    return sendSuccess(res, { categories: Array.isArray(categories) ? categories : [] });
   } catch (err) {
     console.error("Error fetching categories:", err);
-    res.json([]);
+    return sendError(res, "Failed to fetch categories", 500, { error: "Failed to fetch categories" });
   }
 };
 
@@ -682,10 +890,10 @@ exports.getCategoryCounts = async (req, res) => {
       if (!counts[cat]) counts[cat] = 0;
     });
 
-    res.json(counts || {});
+    return sendSuccess(res, { counts: counts || {} });
   } catch (err) {
     console.error("Error getting category counts:", err);
-    res.json({});
+    return sendError(res, "Failed to fetch category counts", 500, { error: "Failed to fetch category counts" });
   }
 };
 
@@ -696,15 +904,8 @@ exports.getRecentProducts = async (req, res) => {
       .limit(10)
       .populate('seller', 'name');
 
-    res.json({
-      success: true,
-      products: recentProducts
-    });
+    return sendSuccess(res, { products: recentProducts });
   } catch (err) {
-    res.status(500).json({
-      success: false,
-      error: "Failed to fetch recent products",
-      details: err.message
-    });
+    return sendError(res, "Failed to fetch recent products", 500, { error: "Failed to fetch recent products", details: err.message });
   }
 };

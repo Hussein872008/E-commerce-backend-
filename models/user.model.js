@@ -40,7 +40,6 @@ const userSchema = new mongoose.Schema({
   passwordChangedAt: Date,
   passwordResetToken: String,
   passwordResetExpires: Date,
-  // passwordChangedAt already defined above; duplicate removed
 }, {
   timestamps: true
 });

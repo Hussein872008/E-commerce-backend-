@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 const jwt = require("jsonwebtoken");
 const Review = require("../models/review.model");
 const Product = require("../models/product.model");
+const { sendSuccess, sendError } = require('../utils/response');
 
 const getCurrentUserIdFromToken = (req) => {
   let currentUserId = null;
@@ -19,46 +20,35 @@ const getCurrentUserIdFromToken = (req) => {
 exports.createReview = async (req, res) => {
   try {
     if (!req.user || req.user.role !== 'buyer') {
-      return res.status(403).json({ success: false, message: 'Only buyer accounts can create reviews' });
+      return sendError(res, 'Only buyer accounts can create reviews', 403, { message: 'Only buyer accounts can create reviews' });
     }
     const { productId, rating, comment } = req.body;
     const userId = req.user._id;
 
     if (!productId) {
-      return res.status(400).json({ success: false, message: "Product ID is required", field: "productId" });
+      return sendError(res, "Product ID is required", 400, { field: "productId" });
     }
     if (!rating) {
-      return res.status(400).json({ success: false, message: "Rating is required", field: "rating" });
+      return sendError(res, "Rating is required", 400, { field: "rating" });
     }
     if (!comment) {
-      return res.status(400).json({ success: false, message: "Comment is required", field: "comment" });
+      return sendError(res, "Comment is required", 400, { field: "comment" });
     }
     if (rating < 1 || rating > 5) {
-      return res.status(400).json({ success: false, message: "Rating must be between 1 and 5 stars", field: "rating" });
+  return sendError(res, "Rating must be between 1 and 5 stars", 400, { field: "rating" });
     }
     if (comment.trim().length < 10) {
-      return res.status(400).json({
-        success: false,
-        message: "Comment must be at least 10 characters long",
-        field: "comment",
-        minLength: 10,
-        currentLength: comment.trim().length
-      });
+      return sendError(res, "Comment must be at least 10 characters long", 400, { field: "comment", minLength: 10, currentLength: comment.trim().length });
     }
 
     const product = await Product.findById(productId);
     if (!product) {
-      return res.status(404).json({ success: false, message: "Product not found", productId });
+      return sendError(res, "Product not found", 404, { productId });
     }
 
     const existingReview = await Review.findOne({ user: userId, product: productId });
     if (existingReview) {
-      return res.status(409).json({
-        success: false,
-        message: "You have already reviewed this product",
-        reviewId: existingReview._id,
-        action: "edit"
-      });
+      return sendError(res, "You have already reviewed this product", 409, { reviewId: existingReview._id, action: "edit" });
     }
 
     const review = new Review({ user: userId, product: productId, rating, comment: comment.trim() });
@@ -70,59 +60,53 @@ exports.createReview = async (req, res) => {
       .populate("user", "name email _id")
       .select("_id rating comment user product createdAt");
 
-    res.status(201).json({ success: true, message: "Review added successfully", review: populatedReview });
+  return sendSuccess(res, { message: "Review added successfully", review: populatedReview }, 201);
 
   } catch (error) {
     console.error("Error creating review:", error.message);
-    res.status(500).json({ success: false, message: "An unexpected error occurred while creating your review", errorCode: "REVIEW_CREATION_FAILED" });
+    return sendError(res, "An unexpected error occurred while creating your review", 500, { errorCode: "REVIEW_CREATION_FAILED" });
   }
 };
 
 exports.updateReview = async (req, res) => {
   try {
     if (!req.user || req.user.role !== 'buyer') {
-      return res.status(403).json({ success: false, message: 'Only buyer accounts can update reviews' });
+      return sendError(res, 'Only buyer accounts can update reviews', 403, { message: 'Only buyer accounts can update reviews' });
     }
     const { id } = req.params;
     const { rating, comment } = req.body;
     const userId = req.user._id;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({ success: false, message: "Invalid review ID format", error: "INVALID_ID_FORMAT" });
+      return sendError(res, "Invalid review ID format", 400, { error: "INVALID_ID_FORMAT" });
     }
     if (!rating && !comment) {
-      return res.status(400).json({ success: false, message: "At least one field (rating or comment) is required for update" });
+  return sendError(res, "At least one field (rating or comment) is required for update", 400, {});
     }
     if (rating && (rating < 1 || rating > 5)) {
-      return res.status(400).json({ success: false, message: "Rating must be between 1 and 5 stars", field: "rating" });
+  return sendError(res, "Rating must be between 1 and 5 stars", 400, { field: "rating" });
     }
     if (comment && comment.trim().length < 10) {
-      return res.status(400).json({
-        success: false,
-        message: "Comment must be at least 10 characters long",
-        field: "comment",
-        minLength: 10,
-        currentLength: comment.trim().length
-      });
+      return sendError(res, "Comment must be at least 10 characters long", 400, { field: "comment", minLength: 10, currentLength: comment.trim().length });
     }
 
     const review = await Review.findById(id);
     if (!review) {
-      return res.status(404).json({ success: false, message: "Review not found", reviewId: id });
+      return sendError(res, "Review not found", 404, { reviewId: id });
     }
     if (review.user.toString() !== userId.toString()) {
-      return res.status(403).json({ success: false, message: "You are not authorized to update this review" });
+      return sendError(res, "You are not authorized to update this review", 403, {});
     }
 
     if (rating) review.rating = rating;
     if (comment) review.comment = comment.trim();
     const updatedReview = await review.save();
 
-    res.json({ success: true, message: "Review updated successfully", review: updatedReview });
+  return sendSuccess(res, { message: "Review updated successfully", review: updatedReview });
 
   } catch (error) {
     console.error("Error updating review:", error.message);
-    res.status(500).json({ success: false, message: "An unexpected error occurred while updating your review", errorCode: "REVIEW_UPDATE_FAILED" });
+    return sendError(res, "An unexpected error occurred while updating your review", 500, { errorCode: "REVIEW_UPDATE_FAILED" });
   }
 };
 
@@ -133,7 +117,7 @@ exports.getProductReviews = async (req, res) => {
     const currentUserId = req.user?._id || getCurrentUserIdFromToken(req);
 
     if (!mongoose.Types.ObjectId.isValid(productId)) {
-      return res.status(400).json({ success: false, message: "Invalid product ID", error: "INVALID_ID" });
+      return sendError(res, "Invalid product ID", 400, { error: "INVALID_ID" });
     }
 
     const reviews = await Review.find({ product: productId })
@@ -156,16 +140,10 @@ exports.getProductReviews = async (req, res) => {
       };
     });
 
-    res.json({
-      success: true,
-      message: "Reviews retrieved successfully",
-      count: formattedReviews.length,
-      reviews: formattedReviews,
-      currentUserId: currentUserId || null
-    });
+    return sendSuccess(res, { message: "Reviews retrieved successfully", count: formattedReviews.length, reviews: formattedReviews, currentUserId: currentUserId || null });
   } catch (error) {
     console.error("Error fetching reviews:", error);
-    res.status(500).json({ success: false, message: "Failed to fetch reviews", error: "SERVER_ERROR" });
+    return sendError(res, "Failed to fetch reviews", 500, { error: "SERVER_ERROR" });
   }
 };
 
@@ -176,23 +154,23 @@ exports.deleteReview = async (req, res) => {
 
     const review = await Review.findById(id);
     if (!review) {
-      return res.status(404).json({ success: false, message: "Review not found", error: "REVIEW_NOT_FOUND" });
+      return sendError(res, "Review not found", 404, { error: "REVIEW_NOT_FOUND" });
     }
 
     const isAdmin = req.user.role === "admin";
     const isOwner = review.user.toString() === userId.toString();
     if (!isOwner && !isAdmin) {
-      return res.status(403).json({ success: false, message: "Not authorized to delete this review", error: "UNAUTHORIZED" });
+  return sendError(res, "Not authorized to delete this review", 403, { error: "UNAUTHORIZED" });
     }
 
     await Product.findByIdAndUpdate(review.product, { $pull: { reviews: review._id } });
     await Review.findByIdAndDelete(id);
 
-    res.json({ success: true, message: "Review deleted successfully" });
+  return sendSuccess(res, { message: "Review deleted successfully" });
 
   } catch (error) {
     console.error("Error deleting review:", error);
-    res.status(500).json({ success: false, message: "Failed to delete review", error: "SERVER_ERROR" });
+    return sendError(res, "Failed to delete review", 500, { error: "SERVER_ERROR" });
   }
 };
 
@@ -201,7 +179,7 @@ exports.getAverageRating = async (req, res) => {
     const { productId } = req.params;
 
     if (!mongoose.Types.ObjectId.isValid(productId)) {
-      return res.status(400).json({ success: false, message: "Invalid product ID", error: "INVALID_ID" });
+      return sendError(res, "Invalid product ID", 400, { error: "INVALID_ID" });
     }
 
     const result = await Review.aggregate([
@@ -214,15 +192,9 @@ exports.getAverageRating = async (req, res) => {
       result[0].ratings.forEach(rating => { distribution[rating]++; });
     }
 
-    res.json({
-      success: true,
-      message: "Average rating calculated successfully",
-      averageRating: result.length > 0 ? parseFloat(result[0].averageRating.toFixed(1)) : 0,
-      count: result.length > 0 ? result[0].count : 0,
-      ratingDistribution: distribution
-    });
+    return sendSuccess(res, { message: "Average rating calculated successfully", averageRating: result.length > 0 ? parseFloat(result[0].averageRating.toFixed(1)) : 0, count: result.length > 0 ? result[0].count : 0, ratingDistribution: distribution });
   } catch (error) {
     console.error("Error calculating average rating:", error);
-    res.status(500).json({ success: false, message: "Failed to calculate average rating", error: "SERVER_ERROR" });
+    return sendError(res, "Failed to calculate average rating", 500, { error: "SERVER_ERROR" });
   }
 };

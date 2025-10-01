@@ -6,9 +6,15 @@ exports.verifyToken = async (req, res, next) => {
 
   if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
     token = req.headers.authorization.split(' ')[1];
-  } else if (req.cookies?.accessToken) {
-
-    token = req.cookies.accessToken;
+  } else if (req.cookies) {
+    const fallbackNames = ['accessToken', 'token', 'authToken'];
+    for (const name of fallbackNames) {
+      if (req.cookies[name]) {
+        console.warn(`Using token from cookie ${name} - prefer Authorization header`);
+        token = req.cookies[name];
+        break;
+      }
+    }
   }
 
   if (!token) {

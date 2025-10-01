@@ -23,6 +23,28 @@ const notificationSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     required: false
   },
+  priority: {
+    type: String,
+    enum: ['low', 'normal', 'high'],
+    default: 'normal'
+  },
+  channels: {
+    type: [String],
+    required: false
+  },
+  status: {
+    type: String,
+    enum: ['unread', 'delivered', 'read', 'failed'],
+    default: 'unread'
+  },
+  ttl: {
+    type: Date,
+    required: false
+  },
+  meta: {
+    type: mongoose.Schema.Types.Mixed,
+    required: false
+  },
   createdAt: {
     type: Date,
     default: Date.now

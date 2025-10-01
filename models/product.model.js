@@ -120,4 +120,6 @@ productSchema.virtual('availabilityStatus').get(function() {
 productSchema.set('toJSON', { virtuals: true });
 productSchema.set('toObject', { virtuals: true });
 
+productSchema.index({ title: 'text', description: 'text', brand: 'text', tags: 'text', sku: 'text' });
+
 module.exports = mongoose.model("Product", productSchema);

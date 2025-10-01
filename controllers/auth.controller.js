@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const sendEmail = require('../utils/sendEmail');
 const { BadRequestError, UnauthorizedError } = require('../middleware/error.middleware');
 const { ConflictError } = require('../middleware/error.middleware');
+const { sendSuccess, sendError } = require('../utils/response');
 
 const generateAccessToken = (userPayload) => {
   const roleToUse = userPayload.role;
@@ -48,36 +49,24 @@ exports.login = async (req, res, next) => {
     if (typeof email === 'string') email = email.trim().toLowerCase();
 
     if (!email || !password) {
-      console.error(`[Auth] Missing login data. email: ${email}`);
-      return res.status(400).json({
-        success: false,
-        error: 'Please provide email and password.',
-        details: 'Please provide email and password.'
-      });
+      console.error(`Missing login data. email: ${email}`);
+      return sendError(res, 'Please provide email and password.', 400, { details: 'Please provide email and password.' });
     }
 
     console.log('Finding user with email:', email);
     const user = await User.findOne({ email }).select('+password');
 
     if (!user) {
-      console.error(`[Auth] Failed login attempt. email: ${email}`);
-      return res.status(401).json({
-        success: false,
-        error: 'Incorrect email or password.',
-        details: 'Incorrect email or password.'
-      });
+      console.error(`Failed login attempt. email: ${email}`);
+      return sendError(res, 'Incorrect email or password.', 401, { details: 'Incorrect email or password.' });
     }
 
     console.log('Comparing passwords...');
     const isPasswordValid = await user.comparePassword(password, user.password);
 
     if (!isPasswordValid) {
-      console.error(`[Auth] Incorrect password. email: ${email}`);
-      return res.status(401).json({
-        success: false,
-        error: 'Incorrect email or password.',
-        details: 'Incorrect email or password.'
-      });
+      console.error(`Incorrect password. email: ${email}`);
+      return sendError(res, 'Incorrect email or password.', 401, { details: 'Incorrect email or password.' });
     }
 
     console.log('Password is valid, generating token...');
@@ -94,18 +83,12 @@ exports.login = async (req, res, next) => {
     user.password = undefined;
 
     console.log(`[Auth] Successful login for user: ${user._id}`);
-    return res.status(200).json({
-      success: true,
+    return sendSuccess(res, {
       message: 'Login successful.',
       token: accessToken,
       refreshToken,
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        role: mappedRole
-      }
-    });
+      user: { _id: user._id, id: user._id, name: user.name, email: user.email, role: mappedRole }
+    }, 200);
   } catch (err) {
     console.error('Login error:', err);
     console.error('Error stack:', err.stack);
@@ -123,31 +106,19 @@ exports.register = async (req, res, next) => {
     if (typeof email === 'string') email = email.trim().toLowerCase();
 
     if (!name || !email || !password || !passwordConfirm) {
-      console.error(`[Auth] Missing registration data. email: ${email}`);
-      return res.status(400).json({
-        success: false,
-        error: 'All fields are required.',
-        details: 'All fields are required.'
-      });
+      console.error(`Missing registration data. email: ${email}`);
+      return sendError(res, 'All fields are required.', 400, { details: 'All fields are required.' });
     }
 
     if (password !== passwordConfirm) {
-      console.error(`[Auth] Passwords do not match. email: ${email}`);
-      return res.status(400).json({
-        success: false,
-        error: 'Passwords do not match.',
-        details: 'Passwords do not match.'
-      });
+      console.error(`Passwords do not match. email: ${email}`);
+      return sendError(res, 'Passwords do not match.', 400, { details: 'Passwords do not match.' });
     }
 
     const existingUser = await User.findOne({ email });
     if (existingUser) {
-      console.error(`[Auth] Email already registered. email: ${email}`);
-      return res.status(409).json({
-        success: false,
-        error: 'Email is already registered.',
-        details: 'Email is already registered.'
-      });
+      console.error(`Email already registered. email: ${email}`);
+      return sendError(res, 'Email is already registered.', 409, { details: 'Email is already registered.' });
     }
 
     const newUser = await User.create({
@@ -171,19 +142,13 @@ exports.register = async (req, res, next) => {
     }
 
 
-    console.log(`[Auth] New user registered: ${newUser._id}`);
-    return res.status(201).json({
-      success: true,
+    console.log(`New user registered: ${newUser._id}`);
+    return sendSuccess(res, {
       message: 'Account created successfully.',
       token: accessToken,
       refreshToken,
-      user: {
-        id: newUser._id,
-        name: newUser.name,
-        email: newUser.email,
-        role: mappedRoleNew
-      }
-    });
+      user: { _id: newUser._id, id: newUser._id, name: newUser.name, email: newUser.email, role: mappedRoleNew }
+    }, 201);
   } catch (err) {
     console.error('Register error:', err);
     console.error('Error stack:', err.stack);
@@ -203,15 +168,7 @@ exports.verifyToken = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
 
-    res.status(200).json({
-      success: true,
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role
-      }
-    });
+  return sendSuccess(res, { user: { _id: user._id, id: user._id, name: user.name, email: user.email, role: user.role } }, 200);
   } catch (err) {
     console.error('Controller error:', err);
     next(err);
@@ -242,7 +199,6 @@ exports.forgotPassword = async (req, res) => {
     await user.save({ validateBeforeSave: false });
     console.log('Reset token saved:', resetToken);
 
-    // Provide a safe fallback for FRONTEND_URL in non-production to help development/testing
     const frontendBase = process.env.FRONTEND_URL || (process.env.NODE_ENV !== 'production' ? `http://${req.headers.host || 'localhost:5173'}` : null);
     if (!frontendBase) {
       console.error('FRONTEND_URL not defined and no safe fallback available');
@@ -275,7 +231,6 @@ exports.forgotPassword = async (req, res) => {
       });
     }
 
-    // In development, return the resetURL to make testing easier. In production we keep the generic message.
     const baseResponse = { success: true, message: 'Password reset link sent to your email.' };
     if (process.env.NODE_ENV !== 'production') {
       baseResponse.resetURL = resetURL;
@@ -352,6 +307,7 @@ exports.resetPassword = async (req, res, next) => {
       token: accessToken,
       refreshToken,
       user: {
+        _id: user._id,
         id: user._id,
         name: user.name,
         email: user.email,
@@ -373,7 +329,7 @@ exports.resetPassword = async (req, res, next) => {
 
 exports.refreshToken = async (req, res, next) => {
   try {
-    const incomingRefreshToken = req.body.refreshToken || (req.cookies && req.cookies.refreshToken);
+    const incomingRefreshToken = (req.cookies && req.cookies.refreshToken) || req.body.refreshToken;
 
     if (!incomingRefreshToken) {
       return res.status(401).json({

@@ -10,7 +10,8 @@ router.post("/login", authController.login);
 router.post("/register", authController.register);
 
 router.get("/test", (req, res) => {
-  res.json({ success: true, message: "Auth route working" });
+  const { sendSuccess } = require('../utils/response');
+  return sendSuccess(res, { message: "Auth route working" });
 });
 
 const simpleValidate = async (req, res, next) => {

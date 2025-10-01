@@ -5,11 +5,28 @@ const bcrypt = require("bcrypt");
 
 const getAllUsers = async (req, res) => {
   try {
-    const users = await User.find().select("-password");
-    res.status(200).json({
-      success: true,
-      users
-    });
+    const search = (req.query.search || '').toString().trim();
+    const role = (req.query.role || '').toString().trim();
+    const page = Math.max(1, parseInt(req.query.page || '1', 10));
+    const limit = Math.max(1, parseInt(req.query.limit || '10', 10));
+
+    const filter = {};
+    if (role) filter.role = role;
+
+    if (search) {
+      const regex = new RegExp(search, 'i');
+      filter.$or = [ { name: regex }, { email: regex }, { username: regex } ];
+    }
+
+    const total = await User.countDocuments(filter);
+    const pages = Math.max(1, Math.ceil(total / limit));
+    const users = await User.find(filter)
+      .select('-password')
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .lean();
+
+    return res.status(200).json({ success: true, users, total, page, pages, limit });
   } catch (err) {
     res.status(500).json({ 
       success: false,
